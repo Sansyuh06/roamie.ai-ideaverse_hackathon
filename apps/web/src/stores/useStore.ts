@@ -10,6 +10,7 @@ interface User {
   dietaryPref?: string;
   seatPreference?: string;
   passportCountry?: string;
+  isAdmin?: boolean;
   paymentBalance?: number;
 }
 
@@ -23,6 +24,9 @@ interface Trip {
   hotels: any[];
   cabs?: any[];
   itinerary: any[];
+  budgetAmount?: number;
+  currency?: string;
+  preferences?: string[];
 }
 
 export interface CartItem {
@@ -44,6 +48,7 @@ interface AppStore {
   loading: boolean;
   error: string | null;
   itineraryBuilding: boolean;
+  recommendedPlan: any | null;
 
   login: (email: string, password: string) => Promise<void>;
   register: (data: { email: string; password: string; name: string; preferredLang: string; tripPurpose: string; dietaryPref?: string; seatPreference?: string; passportCountry?: string }) => Promise<void>;
@@ -52,7 +57,7 @@ interface AppStore {
   updateProfile: (data: Partial<User>) => Promise<void>;
   fetchTrips: () => Promise<void>;
   fetchTrip: (id: string) => Promise<void>;
-  createTrip: (data: { destination: string; startDate: string; endDate: string }) => Promise<{ tripId: string; built: boolean }>;
+  createTrip: (data: { destination: string; startDate: string; endDate: string; budgetAmount?: number; currency?: string; preferences?: string[] }) => Promise<{ tripId: string; built: boolean }>;
   deleteTrip: (id: string) => Promise<void>;
   addFlight: (tripId: string, data: any) => Promise<void>;
   addHotel: (tripId: string, data: any) => Promise<void>;
@@ -76,6 +81,7 @@ interface AppStore {
   fetchNotes: (tripId: string) => Promise<any[]>;
   undoDay: (dayId: string) => Promise<any>;
   setError: (error: string | null) => void;
+  setRecommendedPlan: (plan: any) => void;
 }
 
 // Load persisted cart from localStorage
@@ -90,7 +96,7 @@ const persistCart = (cart: CartItem[]) => {
   localStorage.setItem('openclaw-cart', JSON.stringify(cart));
 };
 
-export const useStore = create<AppStore>((set, get) => ({
+export const useStore = create<AppStore>((set: any, get: any) => ({
   user: {
     id: 'demo-user',
     email: 'demo@roamie.app',
@@ -104,8 +110,9 @@ export const useStore = create<AppStore>((set, get) => ({
   loading: false,
   error: null,
   itineraryBuilding: false,
+  recommendedPlan: null,
 
-  login: async (email, password) => {
+  login: async (email: string, password: string) => {
     set({ loading: true, error: null });
     try {
       const { data } = await api.post('/auth/login', { email, password });
@@ -118,7 +125,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  register: async (regData) => {
+  register: async (regData: any) => {
     set({ loading: true, error: null });
     try {
       const { data } = await api.post('/auth/register', regData);
@@ -162,7 +169,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  updateProfile: async (profileData) => {
+  updateProfile: async (profileData: any) => {
     try {
       const { data } = await api.put('/auth/profile', profileData);
       set({ user: data.user });
@@ -181,7 +188,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  fetchTrip: async (id) => {
+  fetchTrip: async (id: string) => {
     set({ loading: true });
     try {
       const { data } = await api.get(`/trips/${id}`);
@@ -191,40 +198,33 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  createTrip: async (tripData) => {
+  createTrip: async (tripData: any) => {
     const { data } = await api.post('/trips', tripData);
     const tripId = data.trip.id;
     await get().fetchTrips();
     await get().fetchTrip(tripId);
 
-    // Fire itinerary build in the background — don't block the return
-    set({ itineraryBuilding: true });
-    get().buildItinerary(tripId)
-      .then(() => get().fetchTrip(tripId))
-      .catch((e) => console.warn('Auto-build itinerary failed:', e))
-      .finally(() => set({ itineraryBuilding: false }));
-
     return { tripId, built: false };
   },
 
-  deleteTrip: async (id) => {
+  deleteTrip: async (id: string) => {
     await api.delete(`/trips/${id}`);
-    const trips = get().trips.filter(t => t.id !== id);
+    const trips = get().trips.filter((t: any) => t.id !== id);
     set({ trips });
     if (get().currentTrip?.id === id) set({ currentTrip: null });
   },
 
-  addFlight: async (tripId, flightData) => {
+  addFlight: async (tripId: string, flightData: any) => {
     await api.post(`/trips/${tripId}/flights`, flightData);
     await get().fetchTrip(tripId);
   },
 
-  addHotel: async (tripId, hotelData) => {
+  addHotel: async (tripId: string, hotelData: any) => {
     await api.post(`/trips/${tripId}/hotels`, hotelData);
     await get().fetchTrip(tripId);
   },
 
-  buildItinerary: async (tripId, calendarEvents = [], savedPlaces = [], energyLevel) => {
+  buildItinerary: async (tripId: string, calendarEvents: any[] = [], savedPlaces: string[] = [], energyLevel?: string) => {
     set({ loading: true, error: null });
     try {
       const { data } = await api.post('/itinerary/build', { tripId, calendarEvents, savedPlaces, energyLevel });
@@ -250,7 +250,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  scanExpense: async (receiptText, tripId) => {
+  scanExpense: async (receiptText: string, tripId?: string) => {
     set({ loading: true });
     try {
       const { data } = await api.post('/expense/scan', { receiptText, tripId });
@@ -262,28 +262,28 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  fetchExpenses: async (tripId) => {
+  fetchExpenses: async (tripId?: string) => {
     const params = tripId ? `?tripId=${tripId}` : '';
     const { data } = await api.get(`/expense/list${params}`);
     return data;
   },
 
-  fetchChecklist: async (tripId) => {
+  fetchChecklist: async (tripId: string) => {
     const { data } = await api.get(`/checklist/${tripId}`);
     return data;
   },
 
-  confirmDisruption: async (token) => {
+  confirmDisruption: async (token: string) => {
     const { data } = await api.post(`/disruption/confirm/${token}`);
     return data;
   },
 
-  cancelDisruption: async (token) => {
+  cancelDisruption: async (token: string) => {
     const { data } = await api.post(`/disruption/cancel/${token}`);
     return data;
   },
 
-  searchDestinations: async (query) => {
+  searchDestinations: async (query: string) => {
     try {
       const { data } = await api.get(`/geocode/autocomplete?q=${encodeURIComponent(query)}`);
       return data.results || [];
@@ -292,7 +292,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  getCoords: async (query) => {
+  getCoords: async (query: string) => {
     try {
       const { data } = await api.get(`/geocode/coords?q=${encodeURIComponent(query)}`);
       return data;
@@ -301,14 +301,14 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  addToCart: (item) => {
-    const cart = [...get().cart.filter(c => c.id !== item.id), item];
+  addToCart: (item: CartItem) => {
+    const cart = [...get().cart.filter((c: any) => c.id !== item.id), item];
     persistCart(cart);
     set({ cart });
   },
 
-  removeFromCart: (id) => {
-    const cart = get().cart.filter(c => c.id !== id);
+  removeFromCart: (id: string) => {
+    const cart = get().cart.filter((c: any) => c.id !== id);
     persistCart(cart);
     set({ cart });
   },
@@ -318,7 +318,7 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ cart: [] });
   },
 
-  fetchBookingSuggestions: async (tripId) => {
+  fetchBookingSuggestions: async (tripId: string) => {
     try {
       const { data } = await api.get(`/booking-suggestions/${tripId}`);
       return data;
@@ -327,7 +327,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  updateItineraryDay: async (dayId, events) => {
+  updateItineraryDay: async (dayId: string, events: any[]) => {
     await api.put(`/itinerary/day/${dayId}`, { events });
     const trip = get().currentTrip;
     if (trip) {
@@ -342,13 +342,13 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  addCustomEvent: async (dayId, newEvent) => {
+  addCustomEvent: async (dayId: string, newEvent: any) => {
     const trip = get().currentTrip;
     if (!trip) return;
     const day = trip.itinerary.find((d: any) => d.id === dayId);
     if (!day) return;
 
-    const existingEvents = Array.isArray(day.events)
+    const existingEvents: any[] = Array.isArray(day.events)
       ? [...day.events]
       : (() => { try { return JSON.parse(day.events as any); } catch { return []; } })();
 
@@ -384,7 +384,7 @@ export const useStore = create<AppStore>((set, get) => ({
     await get().updateItineraryDay(dayId, existingEvents);
   },
 
-  regenerateDay: async (tripId, dayId, energyLevel) => {
+  regenerateDay: async (tripId: string, dayId: string, energyLevel?: string) => {
     set({ loading: true });
     try {
       const { data } = await api.post('/itinerary/regenerate-day', { tripId, dayId, energyLevel });
@@ -407,7 +407,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  saveNote: async (tripId, dayId, eventTime, note) => {
+  saveNote: async (tripId: string, dayId: string, eventTime: string, note: string) => {
     try {
       const { data } = await api.post('/itinerary/notes', { tripId, dayId, eventTime, note });
       return data.note;
@@ -416,7 +416,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  fetchNotes: async (tripId) => {
+  fetchNotes: async (tripId: string) => {
     try {
       const { data } = await api.get(`/itinerary/notes/${tripId}`);
       return data.notes || [];
@@ -425,7 +425,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  undoDay: async (dayId) => {
+  undoDay: async (dayId: string) => {
     try {
       const { data } = await api.post(`/itinerary/undo/${dayId}`);
       const trip = get().currentTrip;
@@ -445,5 +445,6 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setError: (error) => set({ error }),
+  setError: (error: string | null) => set({ error }),
+  setRecommendedPlan: (plan: any) => set({ recommendedPlan: plan }),
 }));

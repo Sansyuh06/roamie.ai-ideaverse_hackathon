@@ -12,7 +12,7 @@ import {
   ChevronDown, AlertTriangle, Zap, Check,
   Utensils, Eye, ShoppingBag, Bus, Coffee, Briefcase,
   Sparkles, Shield, ArrowRight, ExternalLink, Plus,
-  RotateCcw, RefreshCw,
+  RotateCcw, RefreshCw, Wallet
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import api from '../lib/api';
@@ -74,13 +74,11 @@ function StepItem({ step, index }: { step: { icon: string; label: string; detail
       initial={{ opacity: 0.3, x: -10 }}
       animate={active ? { opacity: 1, x: 0 } : { opacity: 0.3, x: -10 }}
       transition={{ duration: 0.5 }}
-      className={`flex items-center gap-4 p-3 rounded-xl border transition-all ${
-        active ? 'bg-white border-blue-100 shadow-sm' : 'bg-slate-50/50 border-transparent'
-      }`}
+      style={{ display:'flex', alignItems:'center', gap:14, padding:'10px 14px', borderRadius:12, border:'1px solid', borderColor:active?'#f0dfc0':'transparent', background:active?'#fff':'transparent', transition:'all 0.3s' }}
     >
       <span className="text-xl w-8 text-center">{step.icon}</span>
       <div className="flex-1">
-        <p className={`text-sm font-semibold ${active ? 'text-slate-900' : 'text-slate-400'}`}>{step.label}</p>
+        <p style={{ fontSize:13, fontWeight:600, color:active?'#0e2125':'#b5a48a' }}>{step.label}</p>
         {active && (
           <motion.p
             initial={{ opacity: 0 }}
@@ -95,7 +93,7 @@ function StepItem({ step, index }: { step: { icon: string; label: string; detail
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center"
+          style={{ width:20, height:20, borderRadius:"50%", background:"#e55803", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}
         >
           <Check size={12} className="text-white" />
         </motion.div>
@@ -104,9 +102,14 @@ function StepItem({ step, index }: { step: { icon: string; label: string; detail
   );
 }
 
+
+// ── Budget helpers ──────────────────────────────────────────
+const CURR_SYMS: Record<string,string> = { INR:'₹',USD:'$',EUR:'€',GBP:'£',SGD:'S$',JPY:'¥',AED:'د.إ',AUD:'A$' };
+function getTripBudget(tid: string) { try { return JSON.parse(localStorage.getItem('rb-'+tid)||'null'); } catch { return null; } }
+
 export default function MyItinerary() {
   const navigate = useNavigate();
-  const { currentTrip, cart, triggerDisruption, buildItinerary, itineraryBuilding, addCustomEvent, regenerateDay, undoDay } = useStore();
+  const { currentTrip, cart, triggerDisruption, buildItinerary, itineraryBuilding, addCustomEvent, regenerateDay, undoDay, recommendedPlan } = useStore();
 
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['day-0']));
   const [disrupting, setDisrupting] = useState(false);
@@ -263,12 +266,31 @@ export default function MyItinerary() {
 
   if (!currentTrip) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 mt-20 max-w-lg mx-auto glass-panel rounded-3xl text-center">
-        <Calendar size={64} className="text-slate-500 mb-6" />
-        <h2 className="font-display font-bold text-3xl text-slate-900 mb-4">No Trip Selected</h2>
-        <p className="text-slate-500 mb-8 max-w-md">Go to the Dashboard and create or select a trip to see your full interactive itinerary here.</p>
-        <button onClick={() => navigate('/dashboard')} className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-500/20">
+      <div className="flex flex-col items-center justify-center p-12 mt-20 max-w-lg mx-auto r-card rounded-3xl text-center">
+        <Calendar size={64} style={{ color: '#b5a48a', marginBottom: 24 }} />
+        <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 28, color: '#0e2125', marginBottom: 12 }}>No Trip Selected</h2>
+        <p style={{ color: '#6b5c45', marginBottom: 32, fontSize: 15, maxWidth: 360 }}>Go to the Dashboard and create or select a trip to see your full interactive itinerary here.</p>
+        <button onClick={() => navigate('/dashboard')} className="btn btn-primary" style={{ padding: '14px 28px' }}>
           Go to Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  const tripBudget = currentTrip ? getTripBudget(currentTrip.id) : null;
+
+  if (!tripBudget) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 mt-20 max-w-lg mx-auto r-card rounded-3xl text-center">
+        <div style={{ width: 80, height: 80, borderRadius: '50%', background: '#fde8d8', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: '0 8px 24px rgba(229,88,3,0.15)' }}>
+          <Wallet size={36} style={{ color: '#e55803' }} />
+        </div>
+        <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 28, color: '#0e2125', marginBottom: 16 }}>Set Your Budget First</h2>
+        <p style={{ color: '#6b5c45', marginBottom: 32, fontSize: 16, lineHeight: 1.5 }}>
+          Before the AI can craft your perfect personalized itinerary for <strong>{currentTrip.destination}</strong>, we need to know your travel budget!
+        </p>
+        <button onClick={() => navigate('/dashboard')} className="btn btn-primary" style={{ padding: '14px 28px', gap: 10, fontSize: 16 }}>
+          Set Budget on Dashboard <ArrowRight size={18} />
         </button>
       </div>
     );
@@ -325,23 +347,25 @@ export default function MyItinerary() {
     );
   }
 
+
+
   return (
-    <div className="max-w-4xl mx-auto p-4 lg:p-8 pb-32">
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 28px 80px', fontFamily: 'DM Sans, sans-serif' }}>
       {/* Header */}
-      <div className="mb-12">
-        <h1 className="font-display font-bold text-4xl text-slate-900 mb-2">My Itinerary</h1>
-        <p className="text-slate-500 font-medium text-lg">
-          Your master plan for <span className="text-blue-600 font-bold">{currentTrip.destination}</span>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 26, color: '#0e2125', marginBottom: 4 }}>My Itinerary</h1>
+        <p style={{ color: '#6b5c45', fontSize: 14 }}>
+          Master plan for <strong style={{ color: '#e55803' }}>{currentTrip.destination}</strong>
         </p>
         <div className="flex flex-wrap gap-3 mt-4">
-          <span className="px-4 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm text-sm font-semibold tracking-wide backdrop-blur-md">
+          <span style={{ padding:"4px 12px", borderRadius:99, background:"#fff", border:"1px solid #f0dfc0", color:"#0e2125", fontSize:12, fontWeight:600 }}>
             {new Date(currentTrip.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(currentTrip.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
-          <span className="px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm text-sm font-semibold tracking-wide backdrop-blur-md">
+          <span style={{ padding:"4px 12px", borderRadius:99, background:"#dcfce7", border:"1px solid #86efac", color:"#15803d", fontSize:12, fontWeight:600 }}>
             {timeline.filter(n => n.type === 'day').length} days total
           </span>
           {cart.filter(c => c.tripId === currentTrip.id).length > 0 && (
-            <span className="px-4 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 shadow-sm text-sm font-semibold tracking-wide backdrop-blur-md">
+            <span style={{ padding:"4px 12px", borderRadius:99, background:"#fef3c7", border:"1px solid #fcd34d", color:"#92400e", fontSize:12, fontWeight:600 }}>
               {cart.filter(c => c.tripId === currentTrip.id).length} bookings in cart
             </span>
           )}
@@ -360,7 +384,7 @@ export default function MyItinerary() {
                 console.error('Export failed', e);
               }
             }}
-            className="px-4 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 shadow-sm text-sm font-semibold tracking-wide backdrop-blur-md hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+            className="btn btn-ghost btn-sm" style={{ borderRadius: 99, gap: 6 }}
           >
             <ExternalLink size={13} /> Export
           </button>
@@ -374,7 +398,7 @@ export default function MyItinerary() {
                 .finally(() => setBuilding(false));
             }}
             disabled={building}
-            className="px-4 py-1.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700 shadow-sm text-sm font-semibold tracking-wide backdrop-blur-md hover:bg-violet-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            className="btn btn-primary btn-sm" style={{ borderRadius: 99, gap: 6 }}
           >
             <Sparkles size={13} /> {building ? 'Rebuilding...' : 'Rebuild'}
           </button>
@@ -385,11 +409,7 @@ export default function MyItinerary() {
             <button
               key={level}
               onClick={() => setEnergyLevel(level)}
-              className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors capitalize ${
-                energyLevel === level
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white border-slate-200 text-slate-500 hover:border-blue-300'
-              }`}
+              className='btn btn-sm' style={{ borderRadius: 99, padding: '5px 14px', minHeight: 30, fontSize: 12, background: energyLevel===level?'#e55803':'#f5e8ca', color: energyLevel===level?'#fff6e0':'#6b5c45', borderColor: energyLevel===level?'#e55803':'#f0dfc0' }}
             >
               {level}
             </button>
@@ -397,11 +417,88 @@ export default function MyItinerary() {
         </div>
       </div>
 
+      {/* Budget breakdown */}
+      {tripBudget && (() => {
+        const sym = CURR_SYMS[tripBudget.currency] || '';
+        const cats = [
+          { label:'Accommodation', amount:tripBudget.breakdown.accommodation, color:'#6366f1' },
+          { label:'Food',          amount:tripBudget.breakdown.food,          color:'#22c55e' },
+          { label:'Activities',    amount:tripBudget.breakdown.activities,    color:'#e55803' },
+          { label:'Transport',     amount:tripBudget.breakdown.transport,     color:'#f59e0b' },
+          { label:'Misc',          amount:tripBudget.breakdown.misc,          color:'#a855f7' },
+        ];
+        return (
+          <div style={{ background:'#fff', border:'1px solid #f0dfc0', borderRadius:14, padding:'18px 20px', marginBottom:24, boxShadow:'0 2px 12px rgba(14,33,37,0.06)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:10 }}>
+              <div>
+                <p style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', color:'#6b5c45' }}>Trip Budget</p>
+                <p style={{ fontFamily:'Syne,sans-serif', fontWeight:800, fontSize:22, color:'#0e2125' }}>
+                  {sym}{tripBudget.total.toLocaleString()} <span style={{ fontSize:13, color:'#6b5c45', fontWeight:500 }}>{tripBudget.currency}</span>
+                </p>
+                {tripBudget.preferences && <p style={{ fontSize:12, color:'#6b5c45', marginTop:2 }}>🎯 {tripBudget.preferences}</p>}
+              </div>
+              <span style={{ padding:'4px 12px', borderRadius:99, background:'#fde8d8', border:'1px solid #fdba74', fontSize:11, fontWeight:700, color:'#e55803' }}>
+                Budget-Locked Itinerary
+              </span>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 }} className="grid grid-cols-2 sm:grid-cols-5">
+              {cats.map(c => (
+                <div key={c.label} style={{ borderRadius:10, padding:'10px 12px', background:'#fff6e0', border:'1px solid #f0dfc0' }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:c.color, marginBottom:6 }} />
+                  <p style={{ fontSize:11, color:'#6b5c45', fontWeight:600 }}>{c.label}</p>
+                  <p style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:13, color:'#0e2125' }}>{sym}{c.amount.toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Recommended Itinerary */}
+      {recommendedPlan && (
+        <div style={{ marginBottom: 24, padding: '24px', background: '#fff', border: '1px solid #f0dfc0', borderRadius: 16, boxShadow: '0 2px 12px rgba(14,33,37,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: '#fde8d8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={20} style={{ color: '#e55803' }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, color: '#0e2125', fontSize: 18 }}>
+                AI Recommended Itinerary
+              </p>
+              <p style={{ fontSize: 12, color: '#6b5c45', fontWeight: 600 }}>Drafted from your chat profile</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {recommendedPlan.itinerary?.map((day: any) => (
+              <div key={day.dayNum} style={{ border: '1px solid #f0dfc0', borderRadius: 12, padding: 14, background: '#fff6e0' }}>
+                <p style={{ fontSize: 13, fontWeight: 900, color: '#0e2125', marginBottom: 10 }}>
+                  Day {day.dayNum} — {day.dateLabel}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
+                  <div style={{ fontSize: 13, color: '#0e2125', fontWeight: 700, display: 'flex', gap: 8 }}>
+                    <span style={{ width: 70, color: '#6b5c45', flexShrink: 0 }}>Morning:</span>
+                    <span style={{ fontWeight: 600 }}>{day.morning}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#0e2125', fontWeight: 700, display: 'flex', gap: 8 }}>
+                    <span style={{ width: 70, color: '#6b5c45', flexShrink: 0 }}>Afternoon:</span>
+                    <span style={{ fontWeight: 600 }}>{day.afternoon}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#0e2125', fontWeight: 700, display: 'flex', gap: 8 }}>
+                    <span style={{ width: 70, color: '#6b5c45', flexShrink: 0 }}>Evening:</span>
+                    <span style={{ fontWeight: 600 }}>{day.evening}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Timeline Container */}
       <div className="relative">
         {/* Glowy Vertical Line */}
-        <div className="absolute left-[27px] top-6 bottom-6 w-1 rounded-full bg-gradient-to-b from-blue-200 via-emerald-200 to-amber-200 blur-[2px]"></div>
-        <div className="absolute left-[28px] top-6 bottom-6 w-0.5 rounded-full bg-gradient-to-b from-blue-400 via-emerald-400 to-amber-400 z-0 opacity-50"></div>
+        <div style={{ position:"absolute", left:27, top:24, bottom:24, width:3, borderRadius:99, background:"linear-gradient(to bottom, #fde8d8, #e55803, #f5e8ca)", opacity:0.4, filter:"blur(2px)" }}></div>
+        <div style={{ position:"absolute", left:28, top:24, bottom:24, width:2, borderRadius:99, background:"linear-gradient(to bottom, #e55803, #f0dfc0)", opacity:0.5, zIndex:0 }}></div>
 
         <div className="space-y-6">
           {timeline.map((node, idx) => {
@@ -412,7 +509,7 @@ export default function MyItinerary() {
             const isDisruptionNode = node.type === 'disruption';
 
             return (
-              <div key={node.id} className="relative pl-16 md:pl-20">
+              <div key={node.id} style={{ position: 'relative', paddingLeft: 64 }}>
                 {/* Node Dot */}
                 <motion.div
                   initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: idx * 0.05 }}
@@ -424,15 +521,14 @@ export default function MyItinerary() {
                 {/* Node Glass Card */}
                 <motion.div
                   initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05 }}
-                  className={`glass-panel rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-md hover:bg-slate-50 relative z-10 group
-                    ${node.status === 'disrupted' ? 'border-rose-300 ring-1 ring-rose-200/50' : ''}`}
+                  className={`r-card overflow-hidden transition-all relative z-10 group ${node.status === 'disrupted' ? 'border-rose-300 ring-1 ring-rose-200/50' : ''}`} style={{ borderRadius:14 }}
                 >
                   {/* Card Header (Clickable if has children) */}
                   <div
                     onClick={() => (hasChildren || isDisruptionNode) && toggleNode(node.id)}
-                    className={`p-5 flex items-center justify-between ${hasChildren || isDisruptionNode ? 'cursor-pointer hover:bg-slate-100/50' : ''} transition-colors`}
+                    style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: (hasChildren || isDisruptionNode) ? 'pointer' : 'default' }}
                   >
-                    <div className="flex-1 min-w-0 pr-4">
+                    <div className="flex-1 min-w-0" style={{ paddingRight: 16 }}>
                       <div className="flex items-center gap-3 mb-1 flex-wrap">
                         <span className="font-display font-bold text-lg text-slate-900 truncate">{node.title}</span>
                         {node.status === 'disrupted' && (
@@ -462,7 +558,7 @@ export default function MyItinerary() {
                     <div className="flex items-center gap-4 shrink-0">
                       {node.details?.bookingUrl && (
                         <a href={node.details.bookingUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-colors"
+                          className="btn btn-secondary btn-sm hidden sm:flex" style={{ gap:6 }}
                         >
                           <ExternalLink size={12} /> View Booking
                         </a>
@@ -482,7 +578,7 @@ export default function MyItinerary() {
                                 setRegeneratingDayId(null);
                               }
                             }}
-                            className="w-7 h-7 rounded-md bg-white hover:bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
+                            style={{ width:28, height:28, borderRadius:8, background:"#f5e8ca", border:"1px solid #f0dfc0", display:"flex", alignItems:"center", justifyContent:"center", color:"#6b5c45", cursor:"pointer", flexShrink:0 }}
                           >
                             <RefreshCw size={13} className={regeneratingDayId === node.details.dayId ? 'animate-spin' : ''} />
                           </button>
@@ -491,14 +587,14 @@ export default function MyItinerary() {
                             onClick={async () => {
                               await undoDay(node.details.dayId);
                             }}
-                            className="w-7 h-7 rounded-md bg-white hover:bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-slate-900 transition-all focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            style={{ width:28, height:28, borderRadius:8, background:"#f5e8ca", border:"1px solid #f0dfc0", display:"flex", alignItems:"center", justifyContent:"center", color:"#6b5c45", cursor:"pointer", flexShrink:0 }}
                           >
                             <RotateCcw size={13} />
                           </button>
                         </div>
                       )}
                       {(hasChildren || isDisruptionNode) && (
-                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-slate-200 transition-colors border border-slate-200">
+                        <div style={{ width:32, height:32, borderRadius:"50%", background:"#f5e8ca", border:"1px solid #f0dfc0", display:"flex", alignItems:"center", justifyContent:"center", color:"#6b5c45" }}>
                           <motion.div animate={{ rotate: isExpanded ? 180 : 0 }}>
                             <ChevronDown size={18} />
                           </motion.div>
@@ -618,7 +714,7 @@ export default function MyItinerary() {
                             ) : (
                               <button
                                 onClick={() => setAddingToDayId(node.details.dayId)}
-                                className="relative z-10 w-full flex items-center justify-center gap-2 p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 text-slate-500 hover:text-slate-900 hover:bg-slate-50 hover:border-slate-400 text-sm font-semibold transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                className="btn btn-ghost" style={{ width:"100%", borderStyle:"dashed", borderRadius:12 }}
                               >
                                 <Plus size={16} /> Add Your Plan
                               </button>

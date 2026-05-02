@@ -1,162 +1,183 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  MapPin, Calendar, Plane, Map, Plus,
-  Sun, Cloud, CloudRain, AlertTriangle, Receipt
-} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Calendar, Plane, Map, Plus, Sun, Cloud, CloudRain, AlertTriangle, Receipt, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../stores/useStore';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import TravelChatbotV2, { type TravelDetails } from '../components/TravelChatbotV2';
 import 'leaflet/dist/leaflet.css';
 
-function CountdownTimer({ targetDate }: { targetDate: string }) {
-  const [days, setDays] = useState(0);
+// ── Budget types & helpers ────────────────────────────────────
+interface BudgetData {
+  total: number;
+  currency: string;
+  symbol: string;
+  breakdown: { accommodation: number; food: number; activities: number; transport: number; misc: number };
+  preferences: string;
+}
 
-  useEffect(() => {
-    const diff = new Date(targetDate).getTime() - new Date().getTime();
-    setDays(Math.max(0, Math.ceil(diff / (1000 * 3600 * 24))));
-  }, [targetDate]);
+const CURRENCY_SYMBOLS: Record<string,string> = {
+  INR:'₹', USD:'$', EUR:'€', GBP:'£', SGD:'S$', JPY:'¥', AED:'د.إ', AUD:'A$', CAD:'C$', CHF:'Fr'
+};
+
+function getBudget(tripId: string): BudgetData | null {
+  try { return JSON.parse(localStorage.getItem(`rb-${tripId}`) || 'null'); } catch { return null; }
+}
+function setBudget(tripId: string, d: BudgetData) {
+  localStorage.setItem(`rb-${tripId}`, JSON.stringify(d));
+}
+
+// ── Chat bot widget ───────────────────────────────────────────
+interface Msg { role: 'ai'|'user'; text: string }
+
+function BudgetChat({ tripId, onSet }: { tripId: string; onSet: (b: BudgetData) => void }) {
+  const [msgs, setMsgs] = useState<Msg[]>([{
+    role: 'ai',
+    text: "Hi! Let's lock in your trip budget 🎯\n\nWhat's your total budget and currency?\n(e.g. \"₹80000 INR\", \"$2000 USD\")"
+  }]);
+  const [input, setInput] = useState('');
+  const [stage, setStage] = useState<'amount'|'prefs'|'done'>('amount');
+  const [pending, setPending] = useState<Partial<BudgetData>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+
+  const addAI = (text: string) => setMsgs(p => [...p, { role: 'ai', text }]);
+
+  const parseAmt = (txt: string): { amount: number; currency: string; symbol: string } | null => {
+    const syms: Record<string,string> = { '₹':'INR','$':'USD','€':'EUR','£':'GBP' };
+    const m = txt.match(/([₹$€£]?)\s*([\d,]+\.?\d*)\s*([a-zA-Z]*)/);
+    if (!m) return null;
+    const amount = parseFloat(m[2].replace(/,/g, ''));
+    if (!amount) return null;
+    const cur = syms[m[1]] || m[3].toUpperCase() || 'USD';
+    const currency = Object.keys(CURRENCY_SYMBOLS).includes(cur) ? cur : 'USD';
+    return { amount, currency, symbol: CURRENCY_SYMBOLS[currency] };
+  };
+
+  const send = () => {
+    const txt = input.trim(); if (!txt) return;
+    setInput('');
+    setMsgs(p => [...p, { role: 'user', text: txt }]);
+    setTimeout(() => {
+      if (stage === 'amount') {
+        const parsed = parseAmt(txt);
+        if (!parsed) { addAI("Hmm, I didn't catch that. Try \"₹80000 INR\" or \"$2000\"."); return; }
+        const t = parsed.amount;
+        const breakdown = {
+          accommodation: Math.round(t * 0.35),
+          food:          Math.round(t * 0.20),
+          activities:    Math.round(t * 0.20),
+          transport:     Math.round(t * 0.15),
+          misc:          Math.round(t * 0.10),
+        };
+        setPending({ total: t, currency: parsed.currency, symbol: parsed.symbol, breakdown });
+        setStage('prefs');
+        addAI(`Great! ${parsed.symbol}${t.toLocaleString()} ${parsed.currency} locked in 🔒\n\nDefault split:\n• Accommodation 35% (${parsed.symbol}${breakdown.accommodation.toLocaleString()})\n• Food 20% • Activities 20%\n• Transport 15% • Misc 10%\n\nAny travel style preferences?\n(e.g. "budget backpacker", "luxury hotels", "street food", "adventure sports" — or just say "default")`);
+      } else if (stage === 'prefs') {
+        const final: BudgetData = {
+          total: pending.total!,
+          currency: pending.currency!,
+          symbol: pending.symbol!,
+          breakdown: pending.breakdown!,
+          preferences: txt.toLowerCase() === 'default' ? '' : txt,
+        };
+        setBudget(tripId, final);
+        onSet(final);
+        setStage('done');
+        addAI(`Budget set! ${final.symbol}${final.total.toLocaleString()} ${final.currency}${final.preferences ? ` with "${final.preferences}" style` : ''}. Your itinerary will stay within this budget ✅\n\nClick the "Generate Itinerary" button to let the AI plan your trip!`);
+      }
+    }, 380);
+  };
 
   return (
-    <div className="flex flex-col items-center bg-slate-900/60 backdrop-blur-md rounded-2xl p-4 border border-slate-700/50">
-      <span className="font-display font-bold text-4xl text-amber-500">{days}</span>
-      <span className="text-xs uppercase tracking-wider font-semibold text-slate-400 mt-1">Days to go</span>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 320 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {msgs.map((m, i) => (
+          <div key={i} className={m.role === 'ai' ? 'bubble-ai' : 'bubble-user'}
+            style={{ whiteSpace: 'pre-line' }}>{m.text}</div>
+        ))}
+        <div ref={scrollRef} />
+      </div>
+      {stage !== 'done' && (
+        <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid #f0dfc0' }}>
+          <input className="r-input" style={{ flex: 1, minHeight: 40, padding: '8px 12px', fontSize: 13 }}
+            placeholder="Type your reply…" value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && send()} />
+          <button className="btn btn-primary btn-sm" style={{ gap: 0, padding: '0 14px', minHeight: 40 }} onClick={send}>
+            <Send size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
+// ── Countdown ─────────────────────────────────────────────────
+function Countdown({ date }: { date: string }) {
+  const [days, setDays] = useState(0);
+  useEffect(() => {
+    setDays(Math.max(0, Math.ceil((new Date(date).getTime() - Date.now()) / 86400000)));
+  }, [date]);
+  return (
+    <div style={{ background: 'rgba(14,33,37,0.6)', borderRadius: 16, padding: '14px 18px', border: '1px solid rgba(255,246,224,0.1)', textAlign: 'center' }}>
+      <p style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 38, color: '#e55803', lineHeight: 1 }}>{days}</p>
+      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,246,224,0.5)', marginTop: 4 }}>Days to go</p>
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { trips, currentTrip, fetchTrips, fetchTrip, createTrip, searchDestinations, deleteTrip } = useStore();
-  
+  const { trips, currentTrip, fetchTrips, fetchTrip, createTrip, deleteTrip } = useStore();
+
   const [dest, setDest] = useState('');
-  const [origin, setOrigin] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [creating, setCreating] = useState(false);
+  const [creatingStep, setCreatingStep] = useState<1|2>(1);
 
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [searchTimer, setSearchTimer] = useState<any>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [budget, setBudgetState] = useState<BudgetData | null>(null);
+  const [travelProfile, setTravelProfile] = useState<TravelDetails | null>(null);
 
-  const [originSuggestions, setOriginSuggestions] = useState<any[]>([]);
-  const [showOriginSuggestions, setShowOriginSuggestions] = useState(false);
-  const [originSearchTimer, setOriginSearchTimer] = useState<any>(null);
-  const originSuggestionsRef = useRef<HTMLDivElement>(null);
-
+  useEffect(() => { fetchTrips(); }, []);
   useEffect(() => {
-    fetchTrips();
-  }, []);
-
-  useEffect(() => {
-    if (trips.length > 0 && !currentTrip) {
-      fetchTrip(trips[0].id);
-    }
+    if (trips.length > 0 && !currentTrip) fetchTrip(trips[0].id);
   }, [trips]);
-
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-      if (originSuggestionsRef.current && !originSuggestionsRef.current.contains(e.target as Node)) {
-        setShowOriginSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleDestChange = (value: string) => {
-    setDest(value);
-    if (searchTimer) clearTimeout(searchTimer);
-    if (value.length < 2) {
-      setSuggestions([]); setShowSuggestions(false); return;
+    if (currentTrip) {
+      const b = getBudget(currentTrip.id);
+      setBudgetState(b);
     }
-    const timer = setTimeout(async () => {
-      const results = await searchDestinations(value);
-      setSuggestions(results);
-      setShowSuggestions(results.length > 0);
-    }, 300);
-    setSearchTimer(timer);
-  };
+  }, [currentTrip?.id]);
 
-  const selectSuggestion = (suggestion: any) => {
-    setDest(suggestion.name);
-    setShowSuggestions(false);
-    setSuggestions([]);
-  };
-
-  const handleOriginChange = (value: string) => {
-    setOrigin(value);
-    if (originSearchTimer) clearTimeout(originSearchTimer);
-    if (value.length < 2) {
-      setOriginSuggestions([]); setShowOriginSuggestions(false); return;
-    }
-    const timer = setTimeout(async () => {
-      const results = await searchDestinations(value);
-      setOriginSuggestions(results);
-      setShowOriginSuggestions(results.length > 0);
-    }, 300);
-    setOriginSearchTimer(timer);
-  };
-
-  const selectOriginSuggestion = (suggestion: any) => {
-    setOrigin(suggestion.name);
-    setShowOriginSuggestions(false);
-    setOriginSuggestions([]);
-  };
-
-  const handleCreateTrip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!dest || !startDate || !endDate) return;
-    setCreating(true);
-    try {
-      await createTrip({ destination: dest, startDate, endDate });
-      setDest(''); setStartDate(''); setEndDate(''); setOrigin('');
-      // Auto-navigate to itinerary page — it will show building progress
-      navigate('/my-itinerary');
-    } catch (err) {
-      console.error(err);
-    }
-    setCreating(false);
-  };
-
-  // Weather mock data
   const weatherIcons = [Sun, Cloud, CloudRain, Sun, Cloud];
   const temps = [28, 26, 24, 27, 25];
 
+
+
   return (
-    <div className="p-4 lg:p-10 w-full max-w-[1600px] mx-auto space-y-8">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div style={{ padding: '28px 32px', maxWidth: 1400, margin: '0 auto' }}>
+
+      {/* Page header */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 28 }}>
         <div>
-          <h1 className="font-display font-bold text-3xl text-slate-900">Welcome back!</h1>
-          <p className="text-slate-500 mt-1">Let's plan your next adventure.</p>
+          <h1 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 26, color: '#0e2125' }}>Welcome back 👋</h1>
+          <p style={{ color: '#6b5c45', marginTop: 4, fontSize: 14 }}>Let's make your next adventure unforgettable.</p>
         </div>
-        
         {trips.length > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-500">Current Trip:</span>
-            <select
-              value={currentTrip?.id || ''}
-              onChange={e => fetchTrip(e.target.value)}
-              className="bg-white border border-slate-200 hover:border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none shadow-sm transition-colors cursor-pointer"
-            >
-              {trips.map(tr => (
-                <option key={tr.id} value={tr.id}>{tr.destination}</option>
-              ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 13, color: '#6b5c45', fontWeight: 500 }}>Trip:</span>
+            <select value={currentTrip?.id || ''} onChange={e => { fetchTrip(e.target.value); setCreatingStep(1); }}
+              className="r-input" style={{ width: 'auto', minHeight: 38, padding: '6px 12px', fontSize: 13 }}>
+              {trips.map(t => <option key={t.id} value={t.id}>{t.destination}</option>)}
             </select>
             {currentTrip && (
-              <button
-                onClick={async () => {
-                  if (confirm('Delete this trip?')) await deleteTrip(currentTrip.id);
-                }}
-                className="text-xs text-red-500 hover:text-red-700 font-semibold transition-colors"
-              >
+              <button className="btn btn-ghost btn-sm"
+                style={{ color: '#ef4444', background: '#fee2e2', borderColor: '#fee2e2', gap: 0 }}
+                onClick={async () => { if (confirm('Delete this trip?')) { await deleteTrip(currentTrip.id); setCreatingStep(1); } }}>
                 Delete
               </button>
             )}
@@ -164,200 +185,199 @@ export default function Dashboard() {
         )}
       </div>
 
-      {currentTrip ? (
-        <div className="space-y-8">
-          {/* Animated Hero Card */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="relative rounded-3xl overflow-hidden glass-panel border border-slate-200 shadow-sm h-[300px]"
-          >
-            {/* Gradient Overlay representing destination vibe */}
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-white to-slate-50 z-0"></div>
-            
-            <div className="relative z-10 p-8 h-full flex flex-col justify-between">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold tracking-wide uppercase mb-3">
-                    <Plane size={14} /> Upcoming Flight
+      {currentTrip && creatingStep === 1 ? (
+        <div style={{ display: 'grid', gap: 24, alignItems: 'start' }}
+          className="grid grid-cols-1 lg-grid-cols-layout" >
+
+          {/* Left column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Hero card */}
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
+              style={{ background: '#0e2125', borderRadius: 20, overflow: 'hidden', position: 'relative', border: '1px solid #163037' }}>
+              {/* Orange glow */}
+              <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 70% 40%, rgba(229,88,3,0.18) 0%, transparent 65%)', pointerEvents: 'none' }} />
+              {/* Dashed route line */}
+              <svg style={{ position: 'absolute', bottom: 0, right: 0, opacity: 0.18, pointerEvents: 'none' }} width="160" height="80" viewBox="0 0 160 80">
+                <path d="M10 70 Q80 10 150 5" stroke="#e55803" strokeWidth="2" strokeDasharray="6 4" fill="none" />
+                <circle cx="10" cy="70" r="5" fill="#e55803" /><circle cx="150" cy="5" r="5" fill="#e55803" />
+              </svg>
+
+              <div style={{ position: 'relative', zIndex: 1, padding: '28px 28px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 99, background: 'rgba(229,88,3,0.15)', color: '#e55803', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+                      <Plane size={11} /> Upcoming Trip
+                    </span>
+                    <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 38, color: '#fff6e0', lineHeight: 1.05 }}>
+                      {currentTrip.destination}
+                    </h2>
+                    <p style={{ color: 'rgba(255,246,224,0.55)', fontSize: 13, fontWeight: 500, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={13} />
+                      {new Date(currentTrip.startDate).toLocaleDateString()} — {new Date(currentTrip.endDate).toLocaleDateString()}
+                    </p>
                   </div>
-                  <h2 className="font-display font-bold text-4xl lg:text-5xl text-slate-900 mb-2">{currentTrip.destination}</h2>
-                  <p className="text-slate-600 flex items-center gap-2 font-medium">
-                    <Calendar size={16} /> 
-                    {new Date(currentTrip.startDate).toLocaleDateString()} — {new Date(currentTrip.endDate).toLocaleDateString()}
-                  </p>
+                  <Countdown date={currentTrip.startDate} />
                 </div>
-                
-                <CountdownTimer targetDate={currentTrip.startDate} />
               </div>
 
-              {/* Weather Strip */}
-              <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {/* Weather strip */}
+              <div style={{ display: 'flex', gap: 10, padding: '16px 28px 22px', overflowX: 'auto' }}>
                 {weatherIcons.map((Icon, i) => (
-                  <div key={i} className="flex flex-col items-center bg-white/60 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 min-w-[80px] shadow-sm">
-                    <span className="text-xs text-slate-500 font-medium mb-2">
-                       {new Date(new Date(currentTrip.startDate).getTime() + i*86400000).toLocaleDateString('en-US', { weekday: 'short' })}
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'rgba(255,246,224,0.07)', border: '1px solid rgba(255,246,224,0.09)', flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, color: 'rgba(255,246,224,0.45)', fontWeight: 600 }}>
+                      {new Date(new Date(currentTrip.startDate).getTime() + i * 86400000).toLocaleDateString('en', { weekday: 'short' })}
                     </span>
-                    <Icon size={24} className={i === 0 ? "text-blue-500" : "text-slate-400"} />
-                    <span className="text-sm font-bold text-slate-900 mt-2">{temps[i]}°</span>
+                    <Icon size={17} style={{ margin: '6px 0', color: i === 0 ? '#f59e0b' : 'rgba(255,246,224,0.3)' }} />
+                    <span style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 13, color: '#fff6e0' }}>{temps[i]}°</span>
                   </div>
                 ))}
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          {/* Quick Actions Row */}
-          <div>
-            <h3 className="font-display font-semibold text-lg text-slate-800 mb-4">Quick Actions</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <GroupCard icon={Map} title="Itinerary" desc="View plans" color="blue" onClick={() => navigate('/my-itinerary')} />
-              <GroupCard icon={Receipt} title="Expenses" desc="Log costs" color="emerald" onClick={() => navigate('/expenses')} />
-              <GroupCard icon={AlertTriangle} title="Disruptions" desc="Manage delays" color="rose" onClick={() => navigate('/disruption')} />
-              <GroupCard icon={Plus} title="New Trip" desc="Plan another" color="amber" onClick={() => { fetchTrip(''); }} />
+            {/* Quick actions */}
+            <div>
+              <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 15, color: '#0e2125', marginBottom: 12 }}>Quick Actions</h3>
+              <div style={{ display: 'grid', gap: 12 }} className="grid grid-cols-2 lg-grid-cols-4">
+                {[
+                  { Icon: Map,           title: 'Itinerary',   desc: 'View plans',    path: '/my-itinerary' },
+                  { Icon: Receipt,       title: 'Expenses',    desc: 'Log costs',     path: '/expenses' },
+                  { Icon: AlertTriangle, title: 'Disruption',  desc: 'Manage delays', path: '/disruption' },
+                  { Icon: Plus,          title: 'New Trip',    desc: 'Plan another',  path: null },
+                ].map(({ Icon, title, desc, path }) => (
+                  <motion.button key={title} whileHover={{ y: -2, boxShadow: '0 8px 20px rgba(229,88,3,0.1)' }} whileTap={{ scale: 0.97 }}
+                    onClick={() => { if (path) navigate(path); else { fetchTrip(''); setCreatingStep(1); } }}
+                    style={{ background: '#fff', border: '1px solid #f0dfc0', borderRadius: 14, padding: '16px 14px', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: '#fde8d8', color: '#e55803', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon size={16} />
+                    </div>
+                    <div>
+                      <p style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 13, color: '#0e2125' }}>{title}</p>
+                      <p style={{ fontSize: 11, color: '#6b5c45', marginTop: 2 }}>{desc}</p>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Map */}
+            <div className="r-card" style={{ overflow: 'hidden', height: '100%', minHeight: 400 }}>
+              <DashMap loc={currentTrip.destination} />
             </div>
           </div>
         </div>
-      ) : (
-        /* Trip Creation / Interactive Map Layout */
-        <div className="grid lg:grid-cols-2 gap-8 h-[auto] lg:h-[700px]">
-          {/* Trip Creation Form */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel p-8 md:p-10 rounded-3xl border border-slate-200 flex flex-col justify-center">
-            <div className="mb-8">
-              <h2 className="font-display font-bold text-3xl text-slate-900 mb-2">Create New Trip</h2>
-              <p className="text-slate-500">Where would you like to explore next?</p>
-            </div>
-          
-          <form onSubmit={handleCreateTrip} className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 gap-y-12">
-              
-              {/* Origin Autocomplete */}
-              <div className="relative" ref={originSuggestionsRef}>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Leaving from</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Plane size={18} className="text-slate-500" />
-                  </div>
-                  <input
-                    type="text"
-                    value={origin}
-                    onChange={e => handleOriginChange(e.target.value)}
-                    onFocus={() => { if (originSuggestions.length > 0) setShowOriginSuggestions(true); }}
-                    className="bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-900 text-sm rounded-xl focus:bg-white focus:ring-blue-500 focus:border-blue-500 block w-full pl-12 pr-4 h-12 outline-none transition-colors placeholder:text-slate-400"
-                    placeholder="Enter city or airport"
-                    style={{ paddingLeft: '3.5rem' }}
-                  />
-                </div>
-                
-                {/* Autocomplete Dropdown */}
-                <AnimatePresence>
-                  {showOriginSuggestions && originSuggestions.length > 0 && (
-                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                      className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
-                    >
-                      {originSuggestions.map((s: any, i: number) => (
-                        <div key={i} onClick={() => selectOriginSuggestion(s)}
-                          className="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3 border-b border-slate-100 last:border-0"
-                        >
-                          <Plane size={16} className="text-blue-500 shrink-0" />
-                          <div className="truncate">
-                            <p className="text-sm font-semibold text-white truncate">{s.name}</p>
-                            <p className="text-xs text-slate-400 truncate">{s.displayName}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
 
-              {/* Destination Autocomplete */}
-              <div className="relative" ref={suggestionsRef}>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Going to</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <MapPin size={18} className="text-slate-500" />
-                  </div>
-                  <input
-                    type="text"
-                    value={dest}
-                    onChange={e => handleDestChange(e.target.value)}
-                    onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                    required
-                    className="bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-900 text-sm rounded-xl focus:bg-white focus:ring-blue-500 focus:border-blue-500 block w-full pl-12 pr-4 h-12 outline-none transition-colors placeholder:text-slate-400"
-                    placeholder="Enter destination"
-                    style={{ paddingLeft: '3.5rem' }}
-                  />
-                </div>
-                
-                {/* Autocomplete Dropdown */}
-                <AnimatePresence>
-                  {showSuggestions && suggestions.length > 0 && (
-                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                      className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
-                    >
-                      {suggestions.map((s: any, i: number) => (
-                        <div key={i} onClick={() => selectSuggestion(s)}
-                          className="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3 border-b border-slate-100 last:border-0"
-                        >
-                          <MapPin size={16} className="text-blue-500 shrink-0" />
-                          <div className="truncate">
-                            <p className="text-sm font-semibold text-slate-900 truncate">{s.name}</p>
-                            <p className="text-xs text-slate-500 truncate">{s.displayName}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Dates */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Start Date</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Calendar size={18} className="text-slate-500" />
-                  </div>
-                  <input type="date" value={startDate} required onChange={e => setStartDate(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-900 text-sm rounded-xl focus:bg-white focus:ring-blue-500 focus:border-blue-500 block w-full pl-12 pr-4 h-12 outline-none transition-colors"
-                    style={{ paddingLeft: '3.5rem' }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">End Date</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Calendar size={18} className="text-slate-500" />
-                  </div>
-                  <input type="date" value={endDate} required onChange={e => setEndDate(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-900 text-sm rounded-xl focus:bg-white focus:ring-blue-500 focus:border-blue-500 block w-full pl-12 pr-4 h-12 outline-none transition-colors"
-                    style={{ paddingLeft: '3.5rem' }}
-                  />
-                </div>
-              </div>
+      ) : currentTrip && creatingStep === 2 ? (
+        /* Create trip Step 2: Budget */
+        <div style={{ display: 'grid', gap: 24, minHeight: 560 }} className="grid grid-cols-1 lg-grid-cols-2">
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+            className="r-card" style={{ padding: 36, display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 24, color: '#0e2125', marginBottom: 6 }}>Set Your Budget</h2>
+            <p style={{ color: '#6b5c45', fontSize: 14, marginBottom: 20 }}>Let's lock in your numbers for {currentTrip.destination}.</p>
+            
+            <div style={{ flex: 1, background: '#fffbf4', borderRadius: 16, border: '1px solid #f0dfc0', overflow: 'hidden' }}>
+              <BudgetChat tripId={currentTrip.id} onSet={b => setBudgetState(b)} />
             </div>
 
-            <div className="pt-4 flex justify-end gap-4">
-              {trips.length > 0 && (
-                <button type="button" onClick={() => fetchTrip(trips[0].id)} 
-                  className="px-6 py-3.5 rounded-xl font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
-              <button type="submit" disabled={creating} 
-                className="px-8 py-3.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                {creating ? 'Creating...' : 'Create Trip'}
-              </button>
-            </div>
-          </form>
+            {budget && (
+              <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                onClick={() => { setCreatingStep(1); navigate('/my-itinerary'); }}
+                style={{ background: 'linear-gradient(135deg, #e55803, #c44a00)', border: 'none', borderRadius: 14, padding: '16px 20px', color: '#fff', fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', boxShadow: '0 8px 24px rgba(229,88,3,0.3)', marginTop: 20 }}
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                Generate Itinerary 🪄
+              </motion.button>
+            )}
           </motion.div>
 
-          {/* Interactive Map Side Panel */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="rounded-3xl border border-slate-200 overflow-hidden relative shadow-sm hidden lg:block bg-slate-50">
-            <InteractiveMap locationName={dest} />
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+            className="r-card hidden lg:block" style={{ overflow: 'hidden', minHeight: 400 }}>
+            <DashMap loc={currentTrip.destination} />
+          </motion.div>
+        </div>
+
+      ) : (
+        /* Create trip form */
+        <div style={{ display: 'grid', gap: 24, minHeight: 560 }} className="grid grid-cols-1 lg-grid-cols-2">
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+            className="r-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 24, color: '#0e2125', marginBottom: 6 }}>
+                AI Travel Companion
+              </h2>
+              <p style={{ color: '#6b5c45', fontSize: 14 }}>Build your travel profile first, then create your trip.</p>
+            </div>
+
+            <TravelChatbotV2 onChatComplete={(profile) => {
+              setTravelProfile(profile);
+              setDest(profile.destination);
+              setStartDate(profile.departure_date);
+              setEndDate(profile.return_date);
+            }} />
+
+            <div style={{ borderTop: '1px solid #f0dfc0', paddingTop: 16 }}>
+              <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 16, color: '#0e2125', marginBottom: 6 }}>
+                Create New Trip
+              </h3>
+              <p style={{ color: '#6b5c45', fontSize: 13, marginBottom: 16 }}>
+                {travelProfile
+                  ? `Using profile: ${travelProfile.trip_type} • ${travelProfile.destination} • ${travelProfile.departure_date} → ${travelProfile.return_date}`
+                  : 'Follow the chatbot to build your profile.'}
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 8 }}>
+                {trips.length > 0 && (
+                  <button type="button" className="btn btn-ghost" onClick={() => fetchTrip(trips[0].id)}>Cancel</button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={creating || !dest || !startDate || !endDate || !travelProfile}
+                  style={{ minWidth: 160 }}
+                  onClick={async () => {
+                    if (!dest || !startDate || !endDate || !travelProfile) return;
+                    setCreating(true);
+                    try {
+                      const result = await createTrip({ destination: dest, startDate, endDate });
+
+                      // Seed budget for MyItinerary so we don't ask for budget again.
+                      const sym = CURRENCY_SYMBOLS[travelProfile.currency] || '';
+                      const total = Math.max(0, travelProfile.budget_amount || 0);
+                      const accommodation = Math.round(total * 0.35);
+                      const food = Math.round(total * 0.2);
+                      const activities = Math.round(total * 0.2);
+                      const transport = Math.round(total * 0.15);
+                      const misc = Math.max(0, total - (accommodation + food + activities + transport));
+
+                      setBudget(result.tripId, {
+                        total,
+                        currency: travelProfile.currency,
+                        symbol: sym,
+                        breakdown: { accommodation, food, activities, transport, misc },
+                        preferences: travelProfile.experiences.join(', '),
+                      });
+
+                      setCreatingStep(1);
+                      navigate('/my-itinerary');
+                    } catch (err: any) {
+                      console.error('Trip creation failed:', err);
+                      alert('Failed to create trip. Please ensure your local backend is running at http://127.0.0.1:3001');
+                    }
+                    setCreating(false);
+                  }}
+                >
+                  {creating ? 'Creating…' : 'Create Trip →'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+            className="r-card hidden lg:block" style={{ overflow: 'hidden', minHeight: 400 }}>
+            <DashMap loc={dest || travelProfile?.destination || ''} />
           </motion.div>
         </div>
       )}
@@ -365,73 +385,35 @@ export default function Dashboard() {
   );
 }
 
-// Helper component for Quick Actions
-function GroupCard({ icon: Icon, title, desc, color, onClick }: any) {
-  const colorMap: any = {
-    blue: 'bg-white text-slate-900 border-slate-200 hover:border-blue-300 hover:shadow-md',
-    emerald: 'bg-white text-slate-900 border-slate-200 hover:border-emerald-300 hover:shadow-md',
-    rose: 'bg-white text-slate-900 border-slate-200 hover:border-rose-300 hover:shadow-md',
-    amber: 'bg-white text-slate-900 border-slate-200 hover:border-amber-300 hover:shadow-md',
-  };
-
-  return (
-    <motion.button 
-      whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      className={`relative w-full text-left p-5 rounded-2xl glass-panel border ${colorMap[color]} transition-all group flex flex-col gap-4`}
-    >
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-slate-50 text-slate-500 border border-slate-100`}>
-        <Icon size={20} />
-      </div>
-      <div>
-        <h4 className="font-display font-semibold text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{title}</h4>
-        <p className="text-xs font-medium text-slate-500 group-hover:text-slate-600 transition-colors">{desc}</p>
-      </div>
-    </motion.button>
-  );
-}
-
-// Leaflet Map Components for Visual Feedback
-function MapUpdater({ center }: { center: [number, number] }) {
+function MapUpdater({ c }: { c: [number,number] }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(center, 10, { duration: 1.5, easeLinearity: 0.25 });
-  }, [center, map]);
+    if (!Number.isFinite(c[0]) || !Number.isFinite(c[1])) return;
+    const size = map.getSize?.();
+    if (size && (size.x === 0 || size.y === 0)) return;
+    map.flyTo(c, 10, { duration: 1.4 });
+  }, [c, map]);
   return null;
 }
-
-function InteractiveMap({ locationName }: { locationName: string }) {
-  const [center, setCenter] = useState<[number, number]>([20, 0]);
+function DashMap({ loc }: { loc: string }) {
+  const [center, setCenter] = useState<[number,number]>([20, 0]);
   const { getCoords } = useStore();
-
   useEffect(() => {
-    if (locationName && locationName.length > 2) {
-      getCoords(locationName).then(coords => {
-        if (coords) setCenter([coords.lat, coords.lng]);
-      });
-    }
-  }, [locationName, getCoords]);
-
+    if (!loc || loc.length <= 2) return;
+    getCoords(loc).then((r) => {
+      if (!r) return;
+      if (!Number.isFinite(r.lat) || !Number.isFinite(r.lng)) return;
+      setCenter([r.lat, r.lng]);
+    });
+  }, [loc]);
   return (
-    <div className="w-full h-full absolute inset-0 z-0 bg-slate-50">
-      <MapContainer center={center} zoom={2} zoomControl={false} className="w-full h-full z-0" style={{ background: '#f8fafc' }}>
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; CARTO'
-        />
-        <MapUpdater center={center} />
+    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 180 }}>
+      <MapContainer center={center} zoom={2} zoomControl={false} style={{ width: '100%', height: '100%', minHeight: 180, background: '#fff6e0' }}>
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution="© CARTO" />
+        <MapUpdater c={center} />
       </MapContainer>
-      
-      {/* Map Vignette Edge Blends */}
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[#f8fafc] to-transparent z-[10] pointer-events-none" />
-      <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#f8fafc] to-transparent z-[10] pointer-events-none" />
-      <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#f8fafc] to-transparent z-[10] pointer-events-none" />
-      <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#f8fafc] to-transparent z-[10] pointer-events-none" />
-      
-      {/* Map Overlay Badge */}
-      <div className="absolute bottom-8 left-8 z-[20] glass-panel bg-white px-4 py-2 rounded-full border border-slate-200 flex items-center gap-2 shadow-sm">
-        <Map size={14} className="text-blue-600" />
-        <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">Global Discovery</span>
+      <div style={{ position: 'absolute', bottom: 10, left: 10, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 99, background: 'rgba(255,255,255,0.92)', border: '1px solid #f0dfc0', fontSize: 11, fontWeight: 700, color: '#0e2125' }}>
+        <Map size={11} style={{ color: '#e55803' }} /> Global Discovery
       </div>
     </div>
   );

@@ -1,8 +1,10 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/api',
-  headers: { 'Content-Type': 'application/json' },
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  headers: { 
+    'Content-Type': 'application/json',
+  },
 });
 
 api.interceptors.request.use((config) => {
@@ -34,6 +36,9 @@ api.interceptors.response.use(
           window.location.href = '/';
         }
       }
+    }
+    if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+      console.warn('API Connection Error: Ensure your local backend is running at http://127.0.0.1:3001');
     }
     return Promise.reject(error);
   }
