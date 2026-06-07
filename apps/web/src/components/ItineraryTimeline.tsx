@@ -132,7 +132,6 @@ function DaySection({
             <TimelineNode
               key={`${day.id}-${i}`}
               event={event}
-              isLast={i === day.events.length - 1}
               currency={currency}
               onClick={() => onEventClick?.(day.id, event)}
             />
@@ -160,12 +159,10 @@ function DaySection({
 /* ─── Timeline Node ─── */
 function TimelineNode({
   event,
-  isLast,
   currency,
   onClick,
 }: {
   event: TimelineEvent;
-  isLast: boolean;
   currency: string;
   onClick: () => void;
 }) {
