@@ -228,13 +228,13 @@ export const useStore = create<AppStore>((set: any, get: any) => ({
   buildItinerary: async (tripId: string, calendarEvents: any[] = [], savedPlaces: string[] = [], energyLevel?: string) => {
     set({ loading: true, error: null });
     try {
-      const { data } = await api.post('/itinerary/build', { tripId, calendarEvents, savedPlaces, energyLevel });
+      const { data } = await api.post('/itinerary/build', { tripId, calendarEvents, savedPlaces, energyLevel }, { timeout: 90000 });
       // Re-fetch the full trip so itinerary is populated in store
       await get().fetchTrip(tripId);
       set({ loading: false });
       return data;
     } catch (e: any) {
-      set({ loading: false, error: e.response?.data?.error || 'Failed to build itinerary' });
+      set({ loading: false, error: e.response?.data?.error || 'Itinerary generation timed out. Try rebuilding.' });
       throw e;
     }
   },

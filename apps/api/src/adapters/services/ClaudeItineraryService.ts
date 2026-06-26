@@ -89,8 +89,9 @@ IMPORTANT:
 - "location" must be a REAL place that exists in ${ctx.destination} — no made-up names.
 - "cost" is estimated cost per activity in the trip currency.
 - Use real, well-known places in ${ctx.destination}.
-- Include 6-8 events per day.
-- Add at least one breathing room break per day (type: "break", isBreathingRoom: true).
+- Include 5-6 events per day MAX (keep it concise).
+- Add one breathing room break per day (type: "break", isBreathingRoom: true).
+- Keep descriptions SHORT (under 15 words each).
 - Language: ${ctx.lang || 'en'}.`);
     return parts.join('\n');
   }
@@ -99,8 +100,8 @@ IMPORTANT:
     try {
       const prompt = this.buildPrompt(context);
       const response = await this.llm.invoke(prompt, {
-        maxTokens: 8000,
-        system: "You are an expert travel planner. Return ONLY valid JSON, no markdown fences.",
+        maxTokens: 16000,
+        system: "You are an expert travel planner. Return ONLY valid JSON, no markdown fences. Keep responses concise — max 6 events per day.",
         temperature: 0.7,
       });
 
