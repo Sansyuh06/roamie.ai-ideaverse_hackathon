@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.env
+*.env.local
+apps/api/.env
+apps/web/.env
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+.DS_Store
+msg.json
+inf.json
+*.log

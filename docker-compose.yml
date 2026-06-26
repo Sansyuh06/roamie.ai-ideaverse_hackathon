@@ -1,0 +1,63 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: roamie
+      POSTGRES_PASSWORD: roamie
+      POSTGRES_DB: roamie_production
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roamie"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://roamie:roamie@postgres:5432/roamie_production
+      AWS_REGION: us-east-1
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: mistral:latest
+      S3_BUCKET: amazon-q-rules-87a5e787-3b12-4f36-be27-7dffbed3f932
+      USE_BEDROCK: "true"
+      JWT_SECRET: roamie_production_jwt_secret_minimum_32_chars
+      JWT_REFRESH_SECRET: roamie_production_refresh_secret_minimum_32
+      FRONTEND_URL: http://localhost:5173
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  ollama_data:
