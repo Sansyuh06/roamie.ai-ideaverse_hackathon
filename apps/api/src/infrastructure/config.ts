@@ -35,3 +35,11 @@ function loadConfig() {
 
 export const config = loadConfig();
 export type Config = z.infer<typeof configSchema>;
+
+// Startup warnings for optional-but-important config
+if (!config.S3_BUCKET) {
+  console.warn('⚠️  S3_BUCKET not set — receipt image uploads will be skipped.');
+}
+if (config.USE_BEDROCK === 'true' && !process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_PROFILE) {
+  console.warn('⚠️  USE_BEDROCK=true but no AWS credentials found — will fall back to Ollama.');
+}

@@ -1,26 +1,20 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../../infrastructure/database';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-// Optional: Middleware to check if user is admin
-// Since req.user is populated by your auth middleware (if applied), we can check it.
-// We'll write a simple middleware here:
+// Middleware to check if user is admin (req.userId set by authMiddleware)
 const requireAdmin = async (req: any, res: any, next: any) => {
-  // Assuming req.user is set by existing auth middleware (e.g. JWT)
-  // If not, we'd need to parse the token here. Let's assume the router
-  // is mounted AFTER the auth middleware, or we'll just check the db directly
-  // if an admin email is provided, but typically the token has it.
-  
-  if (!req.user || !req.user.id) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!req.userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user || (!user.isAdmin && user.email !== 'admin@roamie.app')) {
-      return res.status(403).json({ error: 'Forbidden: Admins only' });
+      res.status(403).json({ error: 'Forbidden: Admins only' });
+      return;
     }
     next();
   } catch (err) {

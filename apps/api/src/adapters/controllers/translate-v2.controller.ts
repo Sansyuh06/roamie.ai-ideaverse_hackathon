@@ -21,7 +21,8 @@ router.post("/", async (req: Request, res: Response) => {
     res.json({ original: parsed.text, translation, targetLang: parsed.targetLang });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: e.errors });
+      res.status(400).json({ error: "Validation error", details: e.errors });
+      return;
     }
     console.error("Translation failed:", e);
     res.status(500).json({ error: "Translation failed", message: e.message });

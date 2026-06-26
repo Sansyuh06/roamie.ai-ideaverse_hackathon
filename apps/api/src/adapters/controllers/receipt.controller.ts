@@ -30,7 +30,8 @@ router.post("/scan", authMiddleware, async (req: AuthRequest, res: Response) => 
     res.json(result);
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: e.errors });
+      res.status(400).json({ error: "Validation error", details: e.errors });
+      return;
     }
     console.error("Receipt scan failed:", e);
     res.status(500).json({ error: "Receipt scan failed", message: e.message });

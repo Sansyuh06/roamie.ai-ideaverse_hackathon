@@ -9,8 +9,8 @@ const llm = new LLMAdapter();
 const flightAgent = new OpenClawFlightAgent(llm);
 const smsService = new SMSService();
 
-// Default notification number (can be overridden per request)
-const DEFAULT_PHONE = process.env.NOTIFICATION_PHONE || "+919363576451";
+// Notification number (set via NOTIFICATION_PHONE env var)
+const DEFAULT_PHONE = process.env.NOTIFICATION_PHONE || "";
 
 const simulateSchema = z.object({
   scenario: z.string(),
@@ -44,13 +44,15 @@ router.post("/simulate", async (req: Request, res: Response) => {
     // 1. Get AI alternatives via OpenClaw agent (Bedrock)
     const result = await flightAgent.handleDisruption(parsed.flight, parsed.remainingBudget);
 
-    // 2. Send SMS notification via AWS SNS
+    // 2. Send SMS/WhatsApp notification (only if a phone number is configured)
     const phone = parsed.phoneNumber || DEFAULT_PHONE;
-    const smsResult = await smsService.sendDisruptionAlert(phone, {
-      cancelledFlight: parsed.flight,
-      reason,
-      alternatives: result.alternatives || [],
-    });
+    const smsResult = phone
+      ? await smsService.sendDisruptionAlert(phone, {
+          cancelledFlight: parsed.flight,
+          reason,
+          alternatives: result.alternatives || [],
+        })
+      : false;
 
     // 3. Return result with SMS status + full alert message for in-app notification
     const alertMessage = (() => {
@@ -80,7 +82,8 @@ router.post("/simulate", async (req: Request, res: Response) => {
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: e.errors });
+      res.status(400).json({ error: "Validation error", details: e.errors });
+      return;
     }
     console.error("Disruption simulation failed:", e);
     res.status(500).json({ error: "Disruption simulation failed", message: e.message });

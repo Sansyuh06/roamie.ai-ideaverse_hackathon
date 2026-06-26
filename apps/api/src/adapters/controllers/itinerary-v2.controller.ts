@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { LLMAdapter } from "../services/LLMAdapter";
 import { GenerateItineraryV2 } from "../../use-cases/GenerateItineraryV2";
-import { authMiddleware } from "../../infrastructure/middleware/auth";
+import { authMiddleware, AuthRequest } from "../../infrastructure/middleware/auth";
 
 const router = Router();
 const llm = new LLMAdapter();
@@ -20,20 +20,22 @@ const generateSchema = z.object({
 });
 
 // POST /api/itinerary/v2/generate
-router.post("/generate", authMiddleware, async (req: Request, res: Response) => {
+router.post("/generate", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const parsed = generateSchema.parse(req.body);
-    const userId = (req as any).user?.id;
+    const userId = req.userId;
 
     if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
+      res.status(401).json({ error: "Authentication required" });
+      return;
     }
 
     const result = await generateItinerary.execute(parsed, userId);
     res.json(result);
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: e.errors });
+      res.status(400).json({ error: "Validation error", details: e.errors });
+      return;
     }
     console.error("Itinerary generation failed:", e);
     res.status(500).json({ error: "Failed to generate itinerary", message: e.message });

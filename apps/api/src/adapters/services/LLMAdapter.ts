@@ -1,5 +1,5 @@
 import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { getAwsCredentials, AWS_REGION } from "../../infrastructure/awsCredentials";
 import axios from "axios";
 
 export interface LLMInvokeOptions {
@@ -18,12 +18,9 @@ export class LLMAdapter {
   private fallbackModel = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
   constructor() {
-    const region = process.env.AWS_REGION || "us-east-1";
-    const profile = process.env.AWS_PROFILE || "hackathon";
-
     this.bedrock = new BedrockRuntimeClient({
-      region,
-      credentials: fromIni({ profile }),
+      region: AWS_REGION,
+      credentials: getAwsCredentials(),
     });
     this.ollamaUrl = process.env.OLLAMA_URL || process.env.OLLAMA_BASE_URL || "http://localhost:11434";
   }

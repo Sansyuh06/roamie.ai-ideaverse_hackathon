@@ -2,7 +2,6 @@ import { AgentContext } from './BaseAgent';
 import { SearchAgent } from './SearchAgent';
 import { BookingAgent } from './BookingAgent';
 import { ClawbotAgent } from './ClawbotAgent';
-import { object } from 'zod';
 
 export class DisruptionCoordinator {
   constructor(

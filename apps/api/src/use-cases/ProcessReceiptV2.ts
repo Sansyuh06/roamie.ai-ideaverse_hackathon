@@ -1,37 +1,43 @@
 import { LLMAdapter } from "../adapters/services/LLMAdapter";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { fromIni } from "@aws-sdk/credential-providers";
 import { v4 as uuid } from "uuid";
 import prisma from "../infrastructure/database";
+import { getAwsCredentials, AWS_REGION } from "../infrastructure/awsCredentials";
 
-const profile = process.env.AWS_PROFILE || "hackathon";
-const s3 = new S3Client({
-  region: process.env.AWS_REGION || "us-east-1",
-  credentials: fromIni({ profile }),
-});
-const BUCKET = process.env.S3_BUCKET || "amazon-q-rules-87a5e787-3b12-4f36-be27-7dffbed3f932";
+let _s3: S3Client | null = null;
+function getS3(): S3Client {
+  if (!_s3) {
+    _s3 = new S3Client({ region: AWS_REGION, credentials: getAwsCredentials() });
+  }
+  return _s3;
+}
+const BUCKET = process.env.S3_BUCKET || "";
 
 export class ProcessReceiptV2 {
   constructor(private llm: LLMAdapter) {}
 
   async execute(imageBase64: string, mimeType: string, tripId: string, userId: string) {
-    // 1. Upload to S3
+    // 1. Upload to S3 (skip gracefully if bucket not configured)
     let receiptUrl = "";
-    try {
-      const ext = mimeType.includes("png") ? "png" : "jpg";
-      const key = `receipts/${uuid()}.${ext}`;
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: BUCKET,
-          Key: key,
-          Body: Buffer.from(imageBase64, "base64"),
-          ContentType: mimeType || "image/jpeg",
-        })
-      );
-      receiptUrl = `s3://${BUCKET}/${key}`;
-      console.log(`✅ Receipt uploaded to S3: ${key}`);
-    } catch (e: any) {
-      console.warn("S3 upload failed (continuing without):", e.message);
+    if (BUCKET) {
+      try {
+        const ext = mimeType.includes("png") ? "png" : "jpg";
+        const key = `receipts/${uuid()}.${ext}`;
+        await getS3().send(
+          new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: Buffer.from(imageBase64, "base64"),
+            ContentType: mimeType || "image/jpeg",
+          })
+        );
+        receiptUrl = `s3://${BUCKET}/${key}`;
+        console.log(`✅ Receipt uploaded to S3: ${key}`);
+      } catch (e: any) {
+        console.warn("S3 upload failed (continuing without):", e.message);
+      }
+    } else {
+      console.warn("S3_BUCKET not configured — skipping receipt upload");
     }
 
     // 2. Use Bedrock Vision (Claude Sonnet 4.6) to extract receipt data

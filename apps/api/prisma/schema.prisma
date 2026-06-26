@@ -169,3 +169,34 @@ model ItineraryNote {
   @@index([dayId])
 }
 
+
+model MemoryAtom {
+  id         String   @id @default(uuid())
+  userId     String
+  agentName  String
+  content    String
+  embedding  String   @default("[]")
+  tripId     String?
+  confidence Float    @default(1.0)
+  promotedTo String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([agentName])
+}
+
+model MemoryPattern {
+  id                String   @id @default(uuid())
+  userId            String
+  agentName         String
+  consolidatedClaim String
+  claimEmbedding    String   @default("[]")
+  supportingAtomIds String   @default("[]")
+  timesUsed         Int      @default(0)
+  confidence        Float    @default(0.0)
+  lastValidatedAt   DateTime
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
+  @@index([agentName])
+}

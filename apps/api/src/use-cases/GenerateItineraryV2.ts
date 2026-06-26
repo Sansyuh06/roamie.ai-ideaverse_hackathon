@@ -1,7 +1,5 @@
 import { LLMAdapter } from "../adapters/services/LLMAdapter";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "../infrastructure/database";
 
 export class GenerateItineraryV2 {
   constructor(private llm: LLMAdapter) {}

@@ -27,7 +27,8 @@ router.post("/generate", async (req: Request, res: Response) => {
     res.json(result);
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation error", details: e.errors });
+      res.status(400).json({ error: "Validation error", details: e.errors });
+      return;
     }
     console.error("Packing list generation failed:", e);
     res.status(500).json({ error: "Packing list generation failed", message: e.message });

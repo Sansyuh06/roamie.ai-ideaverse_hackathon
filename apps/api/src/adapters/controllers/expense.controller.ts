@@ -90,7 +90,8 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     res.status(201).json({ expense });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
-      return res.status(400).json({ error: e.issues[0].message, code: 'VALIDATION_ERROR' });
+      res.status(400).json({ error: e.issues[0].message, code: 'VALIDATION_ERROR' });
+      return;
     }
     res.status(500).json({ error: 'Failed to add expense', code: 'SERVER_ERROR' });
   }
@@ -102,7 +103,8 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) =>
     const id = req.params.id as string;
     const expense = await prisma.expense.findUnique({ where: { id } });
     if (!expense || expense.userId !== req.userId) {
-      return res.status(404).json({ error: 'Expense not found', code: 'NOT_FOUND' });
+      res.status(404).json({ error: 'Expense not found', code: 'NOT_FOUND' });
+      return;
     }
     await prisma.expense.delete({ where: { id } });
     res.json({ message: 'Expense deleted' });
