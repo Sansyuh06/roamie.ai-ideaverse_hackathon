@@ -119,10 +119,8 @@ export default function OnboardingChat() {
       }
 
       // Store budget + origin in localStorage for other pages
-      const budgetAmount = parseFloat(answers.budgetAmount || answers.budget) || 2000;
-      const currency = answers.currency || 'USD';
       const budgetData = {
-        total: budgetAmount,
+        total: budgetAmount || 2000,
         currency,
         symbol: currency === 'INR' ? '₹' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '$',
         breakdown: {
