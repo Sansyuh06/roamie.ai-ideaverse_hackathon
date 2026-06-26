@@ -92,7 +92,7 @@ IMPORTANT:
 - Include 5-6 events per day MAX (keep it concise).
 - Add one breathing room break per day (type: "break", isBreathingRoom: true).
 - Keep descriptions SHORT (under 15 words each).
-- Language: ${ctx.lang || 'en'}.`);
+- ALWAYS respond in English regardless of destination.`);
     return parts.join('\n');
   }
 
@@ -101,7 +101,7 @@ IMPORTANT:
       const prompt = this.buildPrompt(context);
       const response = await this.llm.invoke(prompt, {
         maxTokens: 16000,
-        system: "You are an expert travel planner. Return ONLY valid JSON, no markdown fences. Keep responses concise — max 6 events per day.",
+        system: "You are an expert travel planner. Always respond in English. Return ONLY valid JSON, no markdown fences. Keep responses concise — max 6 events per day.",
         temperature: 0.7,
       });
 

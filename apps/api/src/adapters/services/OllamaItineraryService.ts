@@ -31,7 +31,7 @@ export class OllamaItineraryService implements IItineraryService {
       parts.push(`Weather forecast:`);
       ctx.weather.daily.forEach(d => parts.push(`  ${d.date}: ${d.description}, ${d.tempMin}-${d.tempMax}°C, ${d.precipitationProbability}% rain`));
     }
-    parts.push(`Language: Respond entirely in ${ctx.lang === 'en' ? 'English' : ctx.lang}. Do not use English if another language is selected.`);
+    parts.push(`Language: Respond entirely in English.`);
     parts.push(`Return a valid JSON object with this structure:
 {
   "days": [{ "date": "YYYY-MM-DD", "events": [{ "time": "HH:MM", "duration_minutes": N, "type": "activity|food|transport|break|meeting|sightseeing|shopping", "title": "...", "description": "...", "location": "...", "isGapSuggestion": false, "isBreathingRoom": false }], "freeGaps": [{ "start": "HH:MM", "end": "HH:MM", "durationMinutes": N }] }],
