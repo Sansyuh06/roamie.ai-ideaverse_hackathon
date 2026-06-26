@@ -12,6 +12,7 @@ import { useStore } from '../stores/useStore';
 import api from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import ItineraryMap from '../components/ItineraryMap';
 
 type NodeType = 'home' | 'flight' | 'hotel' | 'day' | 'activity' | 'disruption' | 'return';
 
@@ -421,6 +422,28 @@ export default function Itinerary() {
           </div>
         </Card>
       )}
+
+      {/* TRIP MAP — all activity locations pinned */}
+      {(() => {
+        const allEvents = (currentTrip.itinerary || [])
+          .flatMap((d: any) => Array.isArray(d.events) ? d.events : [])
+          .filter((e: any) => e.location && !['transport', 'break'].includes(e.type));
+        if (allEvents.length === 0) return null;
+        return (
+          <Card className="mb-12 p-4 md:p-5 border-2 border-border/50 shadow-lg overflow-hidden">
+            <div className="flex items-center gap-3 mb-4 px-2">
+              <div className="w-10 h-10 rounded-xl bg-brand-primary/10 flex items-center justify-center">
+                <MapPin className="text-brand-primary w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-display font-bold text-xl text-text">Trip Map</p>
+                <p className="text-sm font-medium text-text-secondary">Your itinerary locations in {currentTrip.destination}</p>
+              </div>
+            </div>
+            <ItineraryMap destination={currentTrip.destination} events={allEvents} />
+          </Card>
+        );
+      })()}
 
       {/* TIMELINE */}
       <div className="relative">
