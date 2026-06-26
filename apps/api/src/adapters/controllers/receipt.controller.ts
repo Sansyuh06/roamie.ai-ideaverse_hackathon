@@ -2,27 +2,23 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { LLMAdapter } from "../services/LLMAdapter";
 import { ProcessReceiptV2 } from "../../use-cases/ProcessReceiptV2";
-import { authMiddleware } from "../../infrastructure/middleware/auth";
+import { authMiddleware, AuthRequest } from "../../infrastructure/middleware/auth";
 
 const router = Router();
 const llm = new LLMAdapter();
 const processReceipt = new ProcessReceiptV2(llm);
 
 const scanSchema = z.object({
-  imageBase64: z.string().min(1),
+  imageBase64: z.string().min(100, "Image data too short"),
   mimeType: z.string().optional(),
   tripId: z.string().optional(),
 });
 
-// POST /api/receipt/scan
-router.post("/scan", authMiddleware, async (req: Request, res: Response) => {
+// POST /api/receipt/scan — Upload receipt image, OCR via Bedrock Vision, save to S3
+router.post("/scan", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const parsed = scanSchema.parse(req.body);
-    const userId = (req as any).user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
+    const userId = req.userId!;
 
     const result = await processReceipt.execute(
       parsed.imageBase64,
