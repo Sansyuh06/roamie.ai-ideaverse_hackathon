@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Map, Shield, Receipt, Package, Globe, X } from 'lucide-react';
+import { LayoutDashboard, Map, Shield, Receipt, Package, Globe, FileCheck, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export const SIDEBAR_LINKS = [
@@ -8,6 +8,7 @@ export const SIDEBAR_LINKS = [
   { path: '/itinerary', label: 'Itinerary', icon: Map },
   { path: '/budget', label: 'Budget', icon: Receipt },
   { path: '/disruption', label: 'Disruption', icon: Shield },
+  { path: '/visa', label: 'Visa Check', icon: FileCheck },
   { path: '/packing', label: 'Packing', icon: Package },
   { path: '/translate', label: 'Translate', icon: Globe },
 ];

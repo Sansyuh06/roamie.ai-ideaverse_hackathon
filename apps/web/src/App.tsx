@@ -14,6 +14,7 @@ import TranslatorPage from './pages/TranslatorPage';
 import Itinerary from './pages/Itinerary';
 import BudgetTracker from './pages/BudgetTracker';
 import PackingList from './pages/PackingList';
+import VisaChecker from './pages/VisaChecker';
 import VoiceTranslateWidget from './components/VoiceTranslateWidget';
 
 export default function App() {
@@ -73,6 +74,7 @@ export default function App() {
                 { path: '/disruption', El: DisruptionShield },
                 { path: '/packing', El: PackingList },
                 { path: '/translate', El: TranslatorPage },
+                { path: '/visa', El: VisaChecker },
               ].map(({ path, El }) => (
                 <Route
                   key={path}

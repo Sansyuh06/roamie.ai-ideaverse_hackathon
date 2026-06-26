@@ -9,6 +9,7 @@ export const NAV_LINKS = [
   { path: '/itinerary', label: 'Itinerary' },
   { path: '/budget', label: 'Budget' },
   { path: '/disruption', label: 'Disruption' },
+  { path: '/visa', label: 'Visa' },
   { path: '/packing', label: 'Packing' },
   { path: '/translate', label: 'Translate' },
 ];

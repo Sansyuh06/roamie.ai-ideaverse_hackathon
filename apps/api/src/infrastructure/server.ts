@@ -21,6 +21,7 @@ import bookingSuggestionsController from '../adapters/controllers/booking-sugges
 import packingController from '../adapters/controllers/packing.controller';
 import packingV2Controller from '../adapters/controllers/packing-v2.controller';
 import safetyController from '../adapters/controllers/safety.controller';
+import visaController from '../adapters/controllers/visa.controller';
 import memoryController from '../adapters/controllers/memory.controller';
 import feedbackController, { getFeedbackRoutes } from '../adapters/controllers/feedback.controller';
 import { authMiddleware } from './middleware/auth';
@@ -63,6 +64,7 @@ export function createApp() {
   app.use('/api/packing', packingController);
   app.use('/api/packing/v2', packingV2Controller);
   app.use('/api/safety', safetyController);
+  app.use('/api/visa', visaController);
   app.use('/api/memory', memoryController);
   app.use('/api/feedback', feedbackController);
   app.use('/api/admin/feedback', getFeedbackRoutes(authMiddleware));
