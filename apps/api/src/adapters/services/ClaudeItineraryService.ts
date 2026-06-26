@@ -19,7 +19,14 @@ export class ClaudeItineraryService implements IItineraryService {
       `Dates: ${ctx.startDate} to ${ctx.endDate}`,
       `Trip purpose: ${ctx.tripPurpose}`,
     ];
-    if (ctx.energyLevel) parts.push(`Energy level preference: ${ctx.energyLevel}`);
+    if (ctx.energyLevel) {
+      const energyRules: Record<string, string> = {
+        low: `ENERGY LEVEL: LOW — CRITICAL: Plan a RELAXED, gentle pace. Max 3-4 activities per day. Late starts (9:30-10:00). Long breaks (1-2 hours). End early (no events after 19:00). Prioritize sitting, cafés, easy walks. NO rushing between locations. Include 2+ breathing room breaks per day.`,
+        medium: `ENERGY LEVEL: MEDIUM — Plan a balanced pace. 5-6 activities per day. Normal start times (8:30-9:00). Include 1 breathing room break per day. Mix active and relaxed activities. End by 21:00.`,
+        high: `ENERGY LEVEL: HIGH — Pack the day! 7-9 activities per day. Early starts (7:00-8:00). Minimal breaks. Active experiences (hiking, tours, markets). Late nights OK. Maximize sightseeing. Only 1 short break per day.`,
+      };
+      parts.push(energyRules[ctx.energyLevel] || energyRules.medium);
+    }
     if (ctx.dietaryPref) parts.push(`Dietary preference: ${ctx.dietaryPref}`);
     if (ctx.savedPlaces?.length) parts.push(`Must-include places: ${ctx.savedPlaces.join(', ')}`);
     if (ctx.calendarEvents?.length) {

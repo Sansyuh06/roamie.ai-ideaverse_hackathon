@@ -66,4 +66,49 @@ router.get('/list', authMiddleware, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// POST /api/expense — add expense manually
+router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const schema = z.object({
+      amount: z.number().positive(),
+      currency: z.string().default('USD'),
+      category: z.string(),
+      description: z.string().default(''),
+      tripId: z.string().optional(),
+    });
+    const parsed = schema.parse(req.body);
+    const expense = await prisma.expense.create({
+      data: {
+        userId: req.userId!,
+        tripId: parsed.tripId || null,
+        amount: parsed.amount,
+        currency: parsed.currency,
+        category: parsed.category,
+        description: parsed.description,
+      },
+    });
+    res.status(201).json({ expense });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) {
+      return res.status(400).json({ error: e.issues[0].message, code: 'VALIDATION_ERROR' });
+    }
+    res.status(500).json({ error: 'Failed to add expense', code: 'SERVER_ERROR' });
+  }
+});
+
+// DELETE /api/expense/:id — delete an expense
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const expense = await prisma.expense.findUnique({ where: { id } });
+    if (!expense || expense.userId !== req.userId) {
+      return res.status(404).json({ error: 'Expense not found', code: 'NOT_FOUND' });
+    }
+    await prisma.expense.delete({ where: { id } });
+    res.json({ message: 'Expense deleted' });
+  } catch {
+    res.status(500).json({ error: 'Failed to delete expense', code: 'SERVER_ERROR' });
+  }
+});
+
 export default router;

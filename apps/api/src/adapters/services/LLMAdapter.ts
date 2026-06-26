@@ -60,8 +60,15 @@ export class LLMAdapter {
       const imageBase64 = promptParts[0] || "";
       const textPrompt = promptParts[1] || "";
 
+      // Detect image format from base64 magic bytes
+      const imageBuffer = Buffer.from(imageBase64, "base64");
+      let format: "jpeg" | "png" | "gif" | "webp" = "jpeg";
+      if (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50) format = "png";
+      else if (imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49) format = "gif";
+      else if (imageBuffer[0] === 0x52 && imageBuffer[1] === 0x49) format = "webp";
+
       messages[0].content = [
-        { image: { format: "jpeg", source: { bytes: Buffer.from(imageBase64, "base64") } } },
+        { image: { format, source: { bytes: imageBuffer } } },
         { text: textPrompt },
       ];
     } else {

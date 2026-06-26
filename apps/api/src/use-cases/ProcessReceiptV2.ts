@@ -53,8 +53,28 @@ Return ONLY valid JSON:
     try {
       const response = await this.llm.invoke(prompt, { vision: true, maxTokens: 2000 });
       const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const match = cleaned.match(/\{[\s\S]*?\}/);
-      if (match) parsed = { ...parsed, ...JSON.parse(match[0]) };
+      
+      // Try strict JSON parse first
+      try {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) parsed = { ...parsed, ...JSON.parse(match[0]) };
+      } catch {
+        // If JSON fails, try to extract fields with regex fallback
+        const amountMatch = cleaned.match(/"amount"\s*:\s*([\d.]+)/);
+        const currencyMatch = cleaned.match(/"currency"\s*:\s*"([A-Z]{3})"/);
+        const merchantMatch = cleaned.match(/"merchant"\s*:\s*"([^"]+)"/);
+        const categoryMatch = cleaned.match(/"category"\s*:\s*"([^"]+)"/);
+        const descMatch = cleaned.match(/"description"\s*:\s*"([^"]+)"/);
+        const dateMatch = cleaned.match(/"date"\s*:\s*"([^"]+)"/);
+        
+        if (amountMatch) parsed.amount = parseFloat(amountMatch[1]);
+        if (currencyMatch) parsed.currency = currencyMatch[1];
+        if (merchantMatch) parsed.merchant = merchantMatch[1];
+        if (categoryMatch) parsed.category = categoryMatch[1];
+        if (descMatch) parsed.description = descMatch[1];
+        if (dateMatch) parsed.date = dateMatch[1];
+      }
+      
       console.log(`✅ Receipt OCR extracted: ${parsed.merchant} - ${parsed.currency} ${parsed.amount}`);
     } catch (e: any) {
       console.warn("Vision extraction failed:", e.message);

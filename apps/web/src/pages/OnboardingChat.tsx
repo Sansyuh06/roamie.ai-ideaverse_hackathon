@@ -100,9 +100,9 @@ export default function OnboardingChat() {
     try {
       const store = useStore.getState();
       const tripData = {
-        destination: answers.destination || 'Unknown',
-        startDate: answers.startDate || new Date().toISOString().split('T')[0],
-        endDate: answers.endDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        destination: answers.destination || answers['destination'] || 'My Trip',
+        startDate: answers.startDate || answers.dates?.start || new Date().toISOString().split('T')[0],
+        endDate: answers.endDate || answers.dates?.end || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       };
       const result = await store.createTrip(tripData);
 
