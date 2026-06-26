@@ -2,6 +2,8 @@ import { ITripRepository, IItineraryService } from '../domain/interfaces';
 import { ItineraryPlan, TripContext } from '../domain/entities';
 import { WeatherService } from '../adapters/services/WeatherService';
 import { GeocodingService } from '../adapters/services/GeocodingService';
+import { LLMAdapter } from '../adapters/services/LLMAdapter';
+import { DayEnrichmentService } from '../adapters/services/DayEnrichmentService';
 
 export class BuildItinerary {
   constructor(
@@ -11,6 +13,7 @@ export class BuildItinerary {
 
   private weatherService = new WeatherService();
   private geocoding = new GeocodingService();
+  private enrichment = new DayEnrichmentService(new LLMAdapter());
 
   async execute(params: {
     tripId: string;
@@ -66,15 +69,49 @@ export class BuildItinerary {
     // Post-process: add arrival/departure + travel segments
     this.enrichPlanWithTravelEvents(plan, context);
 
-    // Save itinerary days to database
-    for (const day of plan.days) {
-      await this.tripRepo.upsertItineraryDay({
-        tripId: params.tripId,
-        date: new Date(day.date),
-        events: JSON.stringify(day.events),
-        freeGaps: JSON.stringify(day.freeGaps || []),
-      });
-    }
+    // Build a quick lookup of the real weather snapshot per date.
+    const weatherByDate = new Map<string, any>();
+    (context.weather?.daily || []).forEach((d) => weatherByDate.set(d.date, d));
+
+    // Enrich + save each day. Enrichment (AI summary + AI hero image) runs
+    // concurrently across all days; failures degrade gracefully.
+    await Promise.all(
+      plan.days.map(async (day, idx) => {
+        const dayWeather = weatherByDate.get(day.date) || context.weather?.daily?.[idx] || null;
+        const dateLabel = new Date(day.date).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric',
+        });
+
+        let enriched: { summary: string; imageUrl: string | null };
+        try {
+          enriched = await this.enrichment.enrichDay({
+            destination: context.destination,
+            dayNumber: idx + 1,
+            dateLabel,
+            events: day.events as any[],
+            weather: dayWeather,
+          });
+        } catch (e) {
+          console.warn(`Day enrichment failed for day ${idx + 1}:`, (e as Error).message);
+          enriched = { summary: '', imageUrl: null };
+        }
+
+        await this.tripRepo.upsertItineraryDay({
+          tripId: params.tripId,
+          date: new Date(day.date),
+          events: JSON.stringify(day.events),
+          freeGaps: JSON.stringify(day.freeGaps || []),
+          weather: dayWeather ? JSON.stringify(dayWeather) : null,
+          summary: enriched.summary || null,
+          imageUrl: enriched.imageUrl,
+        });
+
+        // Surface enrichment back to the API response too.
+        (day as any).weather = dayWeather;
+        (day as any).summary = enriched.summary;
+        (day as any).imageUrl = enriched.imageUrl;
+      })
+    );
 
     return plan;
   }

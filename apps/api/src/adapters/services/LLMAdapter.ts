@@ -113,6 +113,75 @@ export class LLMAdapter {
     return response.data.response;
   }
 
+  /**
+   * Generate an image via Amazon Bedrock image models.
+   * Primary: Nova Canvas. Fallback: Titan Image Generator v2.
+   * Returns a `data:image/png;base64,...` URL, or null on total failure (never throws).
+   */
+  async generateImage(prompt: string): Promise<string | null> {
+    const useBedrock = process.env.USE_BEDROCK !== "false";
+    if (!useBedrock) return null;
+
+    // Bedrock image models reject overly long prompts; keep it tight + safe.
+    const safePrompt = prompt.replace(/\s+/g, " ").trim().slice(0, 900);
+
+    // Attempt 1: Amazon Nova Canvas
+    try {
+      const body = JSON.stringify({
+        taskType: "TEXT_IMAGE",
+        textToImageParams: { text: safePrompt },
+        imageGenerationConfig: {
+          numberOfImages: 1,
+          width: 768,
+          height: 512,
+          quality: "standard",
+          cfgScale: 7.5,
+        },
+      });
+      const command = new InvokeModelCommand({
+        modelId: "amazon.nova-canvas-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body,
+      });
+      const response = await this.bedrock.send(command);
+      const result = JSON.parse(new TextDecoder().decode(response.body));
+      const b64 = result?.images?.[0];
+      if (b64) return `data:image/png;base64,${b64}`;
+    } catch (e: any) {
+      console.warn("Nova Canvas image generation failed, trying Titan:", e.message);
+    }
+
+    // Attempt 2: Amazon Titan Image Generator v2
+    try {
+      const body = JSON.stringify({
+        taskType: "TEXT_IMAGE",
+        textToImageParams: { text: safePrompt },
+        imageGenerationConfig: {
+          numberOfImages: 1,
+          width: 768,
+          height: 512,
+          quality: "standard",
+          cfgScale: 8.0,
+        },
+      });
+      const command = new InvokeModelCommand({
+        modelId: "amazon.titan-image-generator-v2:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body,
+      });
+      const response = await this.bedrock.send(command);
+      const result = JSON.parse(new TextDecoder().decode(response.body));
+      const b64 = result?.images?.[0];
+      if (b64) return `data:image/png;base64,${b64}`;
+    } catch (e: any) {
+      console.warn("Titan image generation failed:", e.message);
+    }
+
+    return null;
+  }
+
   async embed(text: string): Promise<number[]> {
     const useBedrock = process.env.USE_BEDROCK !== "false";
 

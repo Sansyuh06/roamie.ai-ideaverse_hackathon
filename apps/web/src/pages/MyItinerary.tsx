@@ -107,6 +107,19 @@ function StepItem({ step, index }: { step: { icon: string; label: string; detail
 const CURR_SYMS: Record<string,string> = { INR:'₹',USD:'$',EUR:'€',GBP:'£',SGD:'S$',JPY:'¥',AED:'د.إ',AUD:'A$' };
 function getTripBudget(tid: string) { try { return JSON.parse(localStorage.getItem('rb-'+tid)||'null'); } catch { return null; } }
 
+// ── Weather helper ──────────────────────────────────────────
+function weatherEmoji(code: number): string {
+  if (code === 0) return '☀️';
+  if (code <= 2) return '🌤️';
+  if (code === 3) return '☁️';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code >= 51 && code <= 67) return '🌦️';
+  if (code >= 71 && code <= 77) return '❄️';
+  if (code >= 80 && code <= 82) return '🌧️';
+  if (code >= 95) return '⛈️';
+  return '🌡️';
+}
+
 export default function MyItinerary() {
   const navigate = useNavigate();
   const { currentTrip, trips, fetchTrips, fetchTrip, cart, triggerDisruption, buildItinerary, itineraryBuilding, addCustomEvent, regenerateDay, undoDay, recommendedPlan } = useStore();
@@ -226,7 +239,7 @@ export default function MyItinerary() {
         id: `day-${dayIdx}`, type: 'day',
         title: `Day ${dayIdx + 1} — ${dayDate}`,
         subtitle: `${events.length} activities planned`,
-        details: { dayId: day.id },
+        details: { dayId: day.id, weather: day.weather, summary: day.summary, imageUrl: day.imageUrl },
         children: events.map((evt: any, evtIdx: number) => ({
           id: `day-${dayIdx}-evt-${evtIdx}`, type: 'activity',
           title: evt.title, subtitle: evt.location || evt.description,
@@ -599,6 +612,42 @@ export default function MyItinerary() {
                       )}
                     </div>
                   </div>
+
+                  {/* Day enrichment: AI hero image + weather + narrative */}
+                  {node.type === 'day' && (node.details?.imageUrl || node.details?.summary || node.details?.weather) && (
+                    <div style={{ borderTop: '1px solid #f0dfc0' }}>
+                      {node.details?.imageUrl && (
+                        <div style={{ position: 'relative', width: '100%', height: 170, overflow: 'hidden' }}>
+                          <img
+                            src={node.details.imageUrl}
+                            alt={`${currentTrip.destination} — ${node.title}`}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            loading="lazy"
+                          />
+                          <span style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(14,33,37,0.55)', padding: '3px 8px', borderRadius: 99, backdropFilter: 'blur(4px)', letterSpacing: '0.04em' }}>
+                            <Sparkles size={9} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />AI generated
+                          </span>
+                          {node.details?.weather && (
+                            <span style={{ position: 'absolute', top: 8, left: 10, fontSize: 12, fontWeight: 700, color: '#0e2125', background: 'rgba(255,246,224,0.92)', padding: '5px 11px', borderRadius: 99, border: '1px solid #f0dfc0', backdropFilter: 'blur(4px)' }}>
+                              {weatherEmoji(node.details.weather.weatherCode)} {Math.round(node.details.weather.tempMin)}–{Math.round(node.details.weather.tempMax)}°C · {node.details.weather.precipitationProbability}% rain
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ padding: '14px 20px 18px' }}>
+                        {!node.details?.imageUrl && node.details?.weather && (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 12, fontWeight: 700, color: '#0e2125', background: '#fff6e0', padding: '5px 11px', borderRadius: 99, border: '1px solid #f0dfc0' }}>
+                            {weatherEmoji(node.details.weather.weatherCode)} {node.details.weather.description} · {Math.round(node.details.weather.tempMin)}–{Math.round(node.details.weather.tempMax)}°C · {node.details.weather.precipitationProbability}% rain
+                          </div>
+                        )}
+                        {node.details?.summary && (
+                          <p style={{ fontSize: 13.5, lineHeight: 1.6, color: '#3d3526', fontWeight: 500, margin: 0 }}>
+                            {node.details.summary}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Expanded Activities Pipeline */}
                   <AnimatePresence>

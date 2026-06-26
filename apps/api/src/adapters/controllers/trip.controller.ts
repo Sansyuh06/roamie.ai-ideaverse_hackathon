@@ -65,6 +65,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
         ...day,
         events: safeParseJSON(day.events),
         freeGaps: safeParseJSON(day.freeGaps),
+        weather: day.weather ? safeParseJSON(day.weather) : null,
       })),
     }));
 
@@ -102,6 +103,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
           ...day,
           events: safeParseJSON(day.events),
           freeGaps: safeParseJSON(day.freeGaps),
+          weather: day.weather ? safeParseJSON(day.weather) : null,
         })),
       },
     });

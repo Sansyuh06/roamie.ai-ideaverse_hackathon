@@ -66,6 +66,9 @@ model ItineraryDay {
   events          String   @default("[]")
   freeGaps        String   @default("[]")
   previousVersion String?
+  weather         String?
+  summary         String?
+  imageUrl        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

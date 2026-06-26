@@ -109,3 +109,11 @@
 
 ---
 
+
+## Feature: Per-Day Itinerary Enrichment (weather + AI summary + AI image)
+**Timestamp**: 2026-06-26T08:50:00Z
+**User Input**: "i want the weather to show on each day plan of the itneary and how is the day soo far and give a description of day what to do u can also generate some AI generate image in the discription make sure u cmake that really good use AIDLC for the method and make a professiona one"
+**AI Response**: Followed AIDLC (Requirements → Functional Design → Code Generation). Added `weather`/`summary`/`imageUrl` columns to `ItineraryDay` (migration `add_day_enrichment`). Added `LLMAdapter.generateImage()` (Bedrock Nova Canvas → Titan fallback, data-URL output). Created `DayEnrichmentService` (weather-aware AI narrative + AI hero image, graceful degradation). Integrated concurrent per-day enrichment into `BuildItinerary`. Parsed weather in `trip.controller`. Rendered hero image + weather chip + narrative in `MyItinerary.tsx`. Backend + frontend `tsc` clean.
+**Context**: Construction phase — brownfield feature addition. Real data only (Open-Meteo weather, Bedrock-generated summary/image); no fabricated fallbacks.
+
+---

@@ -55,6 +55,7 @@ export class PrismaTripRepository implements ITripRepository {
 
   async upsertItineraryDay(data: {
     tripId: string; date: Date; events: string; freeGaps: string; previousVersion?: string;
+    weather?: string | null; summary?: string | null; imageUrl?: string | null;
   }): Promise<ItineraryDayEntity> {
     // Normalize to midnight UTC to avoid time-drift duplicates
     const normalizedDate = new Date(data.date);
@@ -71,6 +72,12 @@ export class PrismaTripRepository implements ITripRepository {
       },
     });
 
+    // Only overwrite enrichment fields when new values are provided.
+    const enrichment: Record<string, any> = {};
+    if (data.weather !== undefined) enrichment.weather = data.weather;
+    if (data.summary !== undefined) enrichment.summary = data.summary;
+    if (data.imageUrl !== undefined) enrichment.imageUrl = data.imageUrl;
+
     let row;
     if (existing) {
       row = await prisma.itineraryDay.update({
@@ -79,11 +86,19 @@ export class PrismaTripRepository implements ITripRepository {
           events: data.events,
           freeGaps: data.freeGaps,
           previousVersion: data.previousVersion || existing.events,
+          ...enrichment,
         },
       });
     } else {
       row = await prisma.itineraryDay.create({
-        data: { ...data, date: normalizedDate },
+        data: {
+          tripId: data.tripId,
+          date: normalizedDate,
+          events: data.events,
+          freeGaps: data.freeGaps,
+          previousVersion: data.previousVersion,
+          ...enrichment,
+        },
       });
     }
     return mapItineraryDay(row);

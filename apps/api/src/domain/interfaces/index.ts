@@ -13,7 +13,7 @@ export interface ITripRepository {
   updateTrip(id: string, data: Partial<TripEntity>): Promise<TripEntity>;
   deleteTrip(id: string): Promise<void>;
   findItineraryDays(tripId: string): Promise<ItineraryDayEntity[]>;
-  upsertItineraryDay(data: { tripId: string; date: Date; events: string; freeGaps: string; previousVersion?: string }): Promise<ItineraryDayEntity>;
+  upsertItineraryDay(data: { tripId: string; date: Date; events: string; freeGaps: string; previousVersion?: string; weather?: string | null; summary?: string | null; imageUrl?: string | null }): Promise<ItineraryDayEntity>;
   findFlightsByTripId(tripId: string): Promise<FlightBookingEntity[]>;
   findFlightById(id: string): Promise<FlightBookingEntity | null>;
   updateFlight(id: string, data: Partial<FlightBookingEntity>): Promise<FlightBookingEntity>;
