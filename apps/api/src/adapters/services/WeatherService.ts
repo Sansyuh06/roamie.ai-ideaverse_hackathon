@@ -9,23 +9,9 @@ const WEATHER_DESCRIPTIONS: Record<number, string> = {
   95: 'Thunderstorm',
 };
 
-// Fallback weather data for demo cities
-const FALLBACK_WEATHER: Record<string, WeatherForecast> = {
-  default: {
-    daily: Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() + i);
-      return {
-        date: date.toISOString().split('T')[0],
-        tempMax: 30 + Math.round(Math.random() * 5),
-        tempMin: 24 + Math.round(Math.random() * 3),
-        precipitationProbability: Math.round(Math.random() * 40),
-        weatherCode: [0, 1, 2, 3, 61][Math.floor(Math.random() * 5)],
-        description: 'Partly cloudy',
-      };
-    }),
-  },
-};
+// When the live API is unavailable we return NO weather rather than
+// fabricating data — the itinerary simply omits weather for that run.
+const EMPTY_FORECAST: WeatherForecast = { daily: [] };
 
 export class WeatherService implements IWeatherService {
   async getForecast(lat: number, lng: number, days: number = 7): Promise<WeatherForecast> {
@@ -46,8 +32,8 @@ export class WeatherService implements IWeatherService {
         })),
       };
     } catch (error) {
-      console.warn('Weather API unavailable, using fallback data');
-      return FALLBACK_WEATHER.default;
+      console.warn('Weather API unavailable — proceeding without weather data (no fabricated values)');
+      return EMPTY_FORECAST;
     }
   }
 }

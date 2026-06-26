@@ -77,8 +77,8 @@ router.post("/simulate", async (req: Request, res: Response) => {
       smsPhone: phone,
       alertMessage,
       notification: smsResult
-        ? `✅ SMS alert sent to ${phone}`
-        : `📱 In-app notification delivered (SMS unavailable — verify Fast2SMS account for real SMS)`,
+        ? `✅ WhatsApp/SMS alert sent to ${phone}`
+        : `📱 In-app notification delivered (configure Twilio for WhatsApp/SMS delivery)`,
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
