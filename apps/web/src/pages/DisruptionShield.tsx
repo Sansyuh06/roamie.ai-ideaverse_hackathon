@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plane, Clock, Link as LinkIcon, AlertTriangle, ArrowRight, ShieldAlert } from 'lucide-react';
+import { Plane, Clock, Link as LinkIcon, AlertTriangle, ArrowRight, ShieldAlert, Bell, MessageSquare } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import api from '../lib/api';
 
 const SCENARIOS = [
   { id: 'cancelled', icon: Plane, label: 'Flight Cancelled', color: 'from-error/20 to-error/5 text-error', border: 'border-error/20' },
@@ -19,26 +20,51 @@ const GENERATING_STEPS = [
   "→ Ranking by value"
 ];
 
-const MOCK_RESULTS = [
-  { id: 1, airline: 'Delta Airlines', flight: 'DL 402', dep: '14:30', arr: '16:45', price: 0, overBudget: false, reasoning: 'Fastest alternative, same airline. No extra cost.', best: true },
-  { id: 2, airline: 'United Airlines', flight: 'UA 129', dep: '15:15', arr: '17:30', price: 120, overBudget: true, reasoning: 'Next available flight. Requires re-booking.', best: false },
-  { id: 3, airline: 'American Airlines', flight: 'AA 992', dep: '16:00', arr: '19:15', price: 45, overBudget: false, reasoning: '1 stop connection. Covered by insurance.', best: false },
-];
-
 export default function DisruptionShield() {
   const [activeScenario, setActiveScenario] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [results, setResults] = useState<typeof MOCK_RESULTS | null>(null);
+  const [results, setResults] = useState<any>(null);
+  const [notification, setNotification] = useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
-  const handleScenario = (id: string) => {
+  const handleScenario = async (id: string) => {
     setActiveScenario(id);
     setIsGenerating(true);
     setResults(null);
-    
-    setTimeout(() => {
-      setIsGenerating(false);
-      setResults(MOCK_RESULTS);
-    }, 4000); // Wait for steps to show
+    setNotification(null);
+    setAlertMessage(null);
+
+    // Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+
+    try {
+      const { data } = await api.post('/disruption/v2/simulate', {
+        scenario: id,
+        flight: { airline: "Garuda Indonesia", flightNumber: "GA714", origin: "SIN", destination: "DPS", date: "2026-07-01", departureTime: "08:30", price: 387 },
+        remainingBudget: 1500,
+      });
+
+      setResults(data.alternatives || []);
+      setNotification(data.notification || null);
+      setAlertMessage(data.alertMessage || null);
+
+      // Send browser push notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const best = data.alternatives?.[0];
+        new Notification('⚠️ Flight Disruption Alert — Roamie', {
+          body: best
+            ? `${data.reason}. Best alternative: ${best.airline} ${best.flightNumber} at ${best.departure} — $${best.price}`
+            : data.reason || 'Check app for details',
+          icon: '/favicon.svg',
+        });
+      }
+    } catch (e: any) {
+      console.error('Disruption failed:', e);
+      setResults([]);
+    }
+    setIsGenerating(false);
   };
 
   return (
@@ -109,59 +135,79 @@ export default function DisruptionShield() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6"
           >
-            <Card className="flex items-center gap-4 border-warning/50 bg-warning/10 p-4 text-warning">
-              <AlertTriangle className="h-6 w-6 shrink-0" />
-              <p className="text-sm font-medium">
-                ⚠️ No direct flights available for original timeline. Showing best connecting flights and alternatives.
-              </p>
-            </Card>
+            {/* Notification Banner */}
+            {notification && (
+              <Card className="flex items-center gap-4 border-brand-primary/30 bg-brand-primary/5 p-4">
+                <Bell className="h-5 w-5 shrink-0 text-brand-primary" />
+                <p className="text-sm font-medium text-brand-primary">{notification}</p>
+              </Card>
+            )}
 
+            {/* Alert Message */}
+            {alertMessage && (
+              <Card className="p-4 border-warning/30 bg-warning/5">
+                <pre className="text-sm font-medium text-text whitespace-pre-wrap font-sans">{alertMessage}</pre>
+              </Card>
+            )}
+
+            {/* Flight alternatives */}
             <div className="space-y-4">
-              {results.map((res, i) => (
+              {results.map((alt: any, i: number) => (
                 <motion.div
-                  key={res.id}
+                  key={alt.flightNumber || i}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.15 }}
                 >
-                  <Card className={`relative overflow-hidden p-6 transition-shadow hover:shadow-2xl ${res.best ? 'border-l-8 border-l-brand-primary' : 'border-l-8 border-l-border'}`}>
-                    {res.best && (
+                  <Card className={`relative overflow-hidden p-6 transition-shadow hover:shadow-2xl ${i === 0 ? 'border-l-8 border-l-brand-primary' : 'border-l-8 border-l-border'}`}>
+                    {i === 0 && (
                       <div className="absolute right-6 top-6">
-                        <Badge variant="brand" className="px-3 py-1 text-sm"><Sparkles className="mr-1 h-3 w-3 inline" /> BEST MATCH</Badge>
+                        <Badge variant="brand" className="px-3 py-1 text-sm">✨ BEST MATCH</Badge>
                       </div>
                     )}
                     
-                    <div className="flex flex-col gap-6 md:flex-row md:items-center">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center">
                       <div className="w-48 shrink-0">
-                        <h3 className="font-bold">{res.airline}</h3>
-                        <p className="text-sm font-medium text-text-secondary">{res.flight}</p>
+                        <h3 className="font-bold text-text">{alt.airline}</h3>
+                        <p className="text-sm font-medium text-text-secondary">{alt.flightNumber}</p>
+                        <p className="text-xs text-text-muted mt-1">{alt.route}</p>
                       </div>
                       
-                      <div className="flex flex-1 items-center justify-between gap-4 md:justify-center px-4">
-                        <div className="text-center">
-                          <p className="text-xl font-bold">{res.dep}</p>
+                      <div className="flex flex-1 items-center gap-4">
+                        <div>
+                          <p className="text-lg font-bold text-text">{alt.departure?.split('T')[1]?.slice(0,5) || alt.departure}</p>
+                          <p className="text-xs text-text-muted">Depart</p>
                         </div>
                         <div className="flex-1 flex flex-col items-center">
-                          <ArrowRight className="text-text-muted" />
+                          <div className="w-full h-px bg-border relative">
+                            <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface-hover px-2 text-[10px] font-bold text-text-muted">
+                              {alt.totalHours}h {alt.layover !== 'none' ? `• ${alt.layover}` : '• Direct'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-center">
-                          <p className="text-xl font-bold">{res.arr}</p>
+                        <div>
+                          <p className="text-lg font-bold text-text">{alt.arrival?.split('T')[1]?.slice(0,5) || alt.arrival}</p>
+                          <p className="text-xs text-text-muted">Arrive</p>
                         </div>
                       </div>
 
-                      <div className="w-48 shrink-0 text-right">
-                        <p className={`text-2xl font-extrabold ${res.overBudget ? 'text-warning' : 'text-text'}`}>
-                          {res.price === 0 ? 'Free' : `+$${res.price}`}
-                        </p>
-                        <p className="text-xs font-medium text-text-secondary">{res.reasoning}</p>
+                      <div className="w-32 shrink-0 text-right">
+                        <p className="text-2xl font-extrabold text-text">${alt.price}</p>
+                        {alt.price > 387 && <p className="text-[11px] text-warning font-semibold">+${alt.price - 387} vs original</p>}
+                        {alt.price < 387 && <p className="text-[11px] text-success font-semibold">Save ${387 - alt.price}</p>}
                       </div>
                       
                       <div className="shrink-0">
-                        <Button variant={res.best ? 'primary' : 'secondary'} className="w-full">
-                          Select Flight
+                        <Button variant={i === 0 ? 'primary' : 'secondary'} className="w-full"
+                          onClick={() => window.open(`https://www.skyscanner.co.in/transport/flights/SIN/DPS/`, '_blank')}>
+                          Book Now →
                         </Button>
                       </div>
                     </div>
+
+                    {alt.reasoning && (
+                      <p className="mt-4 text-xs text-text-muted bg-surface-hover rounded-xl px-4 py-2">{alt.reasoning}</p>
+                    )}
                   </Card>
                 </motion.div>
               ))}

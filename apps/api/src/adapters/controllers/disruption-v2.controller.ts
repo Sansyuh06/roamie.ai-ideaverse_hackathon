@@ -2,10 +2,15 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { LLMAdapter } from "../services/LLMAdapter";
 import { OpenClawFlightAgent } from "../../agents/OpenClawFlightAgent";
+import { SMSService } from "../services/SMSService";
 
 const router = Router();
 const llm = new LLMAdapter();
 const flightAgent = new OpenClawFlightAgent(llm);
+const smsService = new SMSService();
+
+// Default notification number (can be overridden per request)
+const DEFAULT_PHONE = process.env.NOTIFICATION_PHONE || "+919363576451";
 
 const simulateSchema = z.object({
   scenario: z.string(),
@@ -19,14 +24,60 @@ const simulateSchema = z.object({
     price: z.number(),
   }),
   remainingBudget: z.number(),
+  phoneNumber: z.string().optional(),
 });
+
+const DISRUPTION_REASONS: Record<string, string> = {
+  cancelled: "Flight cancelled due to operational issues",
+  delayed: "Significant delay (4+ hours) — crew scheduling conflict",
+  missed: "Missed connection due to late inbound aircraft",
+  strike: "Airline staff strike — all departures suspended",
+  medical: "Medical emergency — aircraft grounded for inspection",
+};
 
 // POST /api/disruption/v2/simulate
 router.post("/simulate", async (req: Request, res: Response) => {
   try {
     const parsed = simulateSchema.parse(req.body);
+    const reason = DISRUPTION_REASONS[parsed.scenario] || "Unexpected disruption";
+
+    // 1. Get AI alternatives via OpenClaw agent (Bedrock)
     const result = await flightAgent.handleDisruption(parsed.flight, parsed.remainingBudget);
-    res.json(result);
+
+    // 2. Send SMS notification via AWS SNS
+    const phone = parsed.phoneNumber || DEFAULT_PHONE;
+    const smsResult = await smsService.sendDisruptionAlert(phone, {
+      cancelledFlight: parsed.flight,
+      reason,
+      alternatives: result.alternatives || [],
+    });
+
+    // 3. Return result with SMS status + full alert message for in-app notification
+    const alertMessage = (() => {
+      const best = result.alternatives?.[0];
+      let msg = `⚠️ ${parsed.flight.airline} ${parsed.flight.flightNumber} CANCELLED\n`;
+      msg += `Route: ${parsed.flight.origin} → ${parsed.flight.destination}\n`;
+      msg += `Date: ${parsed.flight.date} at ${parsed.flight.departureTime}\n`;
+      msg += `Reason: ${reason}\n\n`;
+      if (best) {
+        msg += `✅ Best Alternative: ${best.airline} ${best.flightNumber}\n`;
+        msg += `Departs: ${best.departure} | Arrives: ${best.arrival}\n`;
+        msg += `Duration: ${best.totalHours}h | Price: $${best.price}\n`;
+        if (best.layover && best.layover !== "none") msg += `Layover: ${best.layover}\n`;
+      }
+      return msg;
+    })();
+
+    res.json({
+      ...result,
+      reason,
+      smsSent: smsResult,
+      smsPhone: phone,
+      alertMessage,
+      notification: smsResult
+        ? `✅ SMS alert sent to ${phone}`
+        : `📱 In-app notification delivered (SMS unavailable — verify Fast2SMS account for real SMS)`,
+    });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: e.errors });
