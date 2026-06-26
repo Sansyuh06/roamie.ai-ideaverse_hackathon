@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../../infrastructure/middleware/auth';
 import { TriggerDisruptionShield } from '../../use-cases/TriggerDisruptionShield';
 import { PrismaTripRepository } from '../repositories/PrismaTripRepository';
-import { MockFlightService } from '../services/MockFlightService';
+import { RealFlightService } from '../services/RealFlightService';
 import { ClaudeItineraryService } from '../services/ClaudeItineraryService';
 import { QRCodeService } from '../services/QRCodeService';
 import { disruptionLimiter } from '../../infrastructure/middleware/rateLimiter';
@@ -11,7 +11,7 @@ import prisma from '../../infrastructure/database';
 
 const router = Router();
 const tripRepo = new PrismaTripRepository();
-const flightService = new MockFlightService();
+const flightService = new RealFlightService();
 const itineraryService = new ClaudeItineraryService();
 const qrService = new QRCodeService();
 const disruptionShield = new TriggerDisruptionShield(tripRepo, flightService, itineraryService, qrService);

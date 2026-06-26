@@ -4,6 +4,7 @@ import { Plane, Clock, Link as LinkIcon, AlertTriangle, ArrowRight, ShieldAlert,
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { useStore } from '../stores/useStore';
 import api from '../lib/api';
 
 const SCENARIOS = [
@@ -40,9 +41,32 @@ export default function DisruptionShield() {
     }
 
     try {
+      // Use real trip flight data if available, otherwise use trip info
+      const { currentTrip } = useStore.getState();
+      const realFlight = currentTrip?.flights?.[0];
+      const origin = localStorage.getItem('roamie-origin') || 'Chennai';
+      
+      const flightData = realFlight ? {
+        airline: realFlight.airline || 'Unknown Airline',
+        flightNumber: realFlight.flightNumber || 'XX-000',
+        origin: realFlight.origin || origin,
+        destination: realFlight.destination || currentTrip?.destination || 'Unknown',
+        date: realFlight.departureTime ? new Date(realFlight.departureTime).toISOString().split('T')[0] : '2026-07-01',
+        departureTime: realFlight.departureTime ? new Date(realFlight.departureTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '08:30',
+        price: realFlight.price || 400,
+      } : {
+        airline: "Airline",
+        flightNumber: "XX-000",
+        origin: origin,
+        destination: currentTrip?.destination || "Destination",
+        date: currentTrip?.startDate ? new Date(currentTrip.startDate).toISOString().split('T')[0] : "2026-07-01",
+        departureTime: "08:30",
+        price: 400,
+      };
+
       const { data } = await api.post('/disruption/v2/simulate', {
         scenario: id,
-        flight: { airline: "Garuda Indonesia", flightNumber: "GA714", origin: "SIN", destination: "DPS", date: "2026-07-01", departureTime: "08:30", price: 387 },
+        flight: flightData,
         remainingBudget: 1500,
       });
 

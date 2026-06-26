@@ -71,11 +71,12 @@ export default function BookingSuggestions({ tripId, destination }: { tripId: st
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<'flights' | 'hotels'>('flights');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const origin = localStorage.getItem('roamie-origin') || 'your city';
 
   const loadSuggestions = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/booking-suggestions/${tripId}`);
+      const { data } = await api.get(`/booking-suggestions/${tripId}?origin=${encodeURIComponent(origin)}`);
       setFlights(data.flights || []);
       setHotels(data.hotels || []);
       setLoaded(true);

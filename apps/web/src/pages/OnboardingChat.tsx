@@ -39,6 +39,7 @@ const EXPERIENCES = [
 ];
 
 const QUESTIONS = [
+  { id: 'origin', title: 'Where are you leaving from?', subtitle: 'Your home city or departure airport', type: 'text_simple' },
   { id: 'destination', title: 'Where is your next adventure?', subtitle: 'Search or click on the map to drop a pin', type: 'map' },
   { id: 'type', title: 'What kind of trip is this?', subtitle: 'Select the main vibe for your journey', type: 'choice' },
   { id: 'dates', title: 'When are you traveling?', subtitle: 'Select your ideal dates', type: 'date' },
@@ -48,10 +49,11 @@ const QUESTIONS = [
 ];
 
 const GENERATING_STEPS = [
-  "Analyzing destination possibilities...",
-  "Curating optimal local activities...",
-  "Optimizing daily routes & schedules...",
-  "Finalizing your perfect itinerary..."
+  "Finding real flights from your origin...",
+  "Searching hotels near your destination...",
+  "Building your day-by-day itinerary...",
+  "Optimizing routes & activities...",
+  "Finalizing your perfect trip plan..."
 ];
 
 // Custom Map Event component to handle clicks
@@ -101,13 +103,13 @@ export default function OnboardingChat() {
       const store = useStore.getState();
       const tripData = {
         destination: answers.destination || answers['destination'] || 'My Trip',
-        startDate: answers.startDate || answers.dates?.start || new Date().toISOString().split('T')[0],
-        endDate: answers.endDate || answers.dates?.end || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        startDate: answers.startDate || answers.start || new Date().toISOString().split('T')[0],
+        endDate: answers.endDate || answers.end || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       };
       const result = await store.createTrip(tripData);
 
-      // Store budget in localStorage for itinerary page compatibility
-      const budgetAmount = parseFloat(answers.budget) || 2000;
+      // Store budget + origin in localStorage for other pages
+      const budgetAmount = parseFloat(answers.budgetAmount || answers.budget) || 2000;
       const currency = answers.currency || 'USD';
       const budgetData = {
         total: budgetAmount,
@@ -121,8 +123,11 @@ export default function OnboardingChat() {
           misc: Math.round(budgetAmount * 0.10),
         },
         preferences: (answers.experiences || []).join(', '),
+        origin: answers.origin || '',
       };
       localStorage.setItem(`rb-${result.tripId}`, JSON.stringify(budgetData));
+      // Store origin separately for booking suggestions
+      localStorage.setItem(`roamie-origin`, answers.origin || '');
 
       // Navigate after a short delay for the animation
       setTimeout(() => {
@@ -245,6 +250,23 @@ export default function OnboardingChat() {
               </div>
               
               <div className="mb-12">
+                {/* 0. ORIGIN (simple text) */}
+                {currentQ.type === 'text_simple' && (
+                  <div className="space-y-6">
+                    <div className="relative">
+                      <Plane className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" />
+                      <Input
+                        autoFocus
+                        placeholder="e.g., Chennai, Mumbai, Singapore, London..."
+                        value={answers[currentQ.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [currentQ.id]: e.target.value })}
+                        onKeyDown={(e) => e.key === 'Enter' && answers[currentQ.id] && handleNext()}
+                        className="pl-12 text-xl py-6 rounded-2xl bg-surface-hover border-transparent focus:bg-white transition-all shadow-inner"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* 1. MAP DESTINATION */}
                 {currentQ.type === 'map' && (
                   <div className="space-y-6">

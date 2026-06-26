@@ -100,3 +100,12 @@
 
 ---
 
+
+## Real Data & UX Fix Request
+**Timestamp**: 2026-06-26T07:00:00Z
+**User Input**: "when this application runs i want it to actually use real data 100% — flight data, hotel data, location mentioned in the itinerary data. Also ask where are we leaving from that's the whole point please use common sense"
+**AI Response**: Key fixes needed: 1) Onboarding must ask "Where are you departing FROM?" (origin city) — critical for flights. 2) All data should come from Bedrock AI with real places, real airlines, realistic pricing — no random Math.random(). 3) Booking suggestions should reference real hotels and flights that actually serve the route.
+**Context**: The user is right — we never ask for origin/departure city, which makes flight suggestions meaningless. Need to add origin question to onboarding and pass it through to all services.
+
+---
+
