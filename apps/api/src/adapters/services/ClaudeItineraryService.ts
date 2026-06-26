@@ -14,11 +14,24 @@ export class ClaudeItineraryService implements IItineraryService {
 
   private buildPrompt(ctx: TripContext): string {
     const parts = [
-      `You are an expert travel planner. Create a detailed, realistic day-by-day itinerary.`,
+      `You are an expert travel planner. Create a detailed, realistic day-by-day itinerary using ONLY real places that actually exist.`,
       `Destination: ${ctx.destination}`,
       `Dates: ${ctx.startDate} to ${ctx.endDate}`,
       `Trip purpose: ${ctx.tripPurpose}`,
     ];
+
+    // Budget validation — be honest if it's not feasible
+    if ((ctx as any).budget && (ctx as any).budget > 0) {
+      const budget = (ctx as any).budget;
+      const currency = (ctx as any).currency || 'USD';
+      parts.push(`\nBUDGET: ${currency} ${budget} total for the entire trip.`);
+      parts.push(`CRITICAL BUDGET RULES:`);
+      parts.push(`- If this budget is NOT realistic for ${ctx.destination} for these dates, set "budgetFeasible": false in your response and explain why in "budgetWarning".`);
+      parts.push(`- If feasible, every recommendation MUST fit within this budget.`);
+      parts.push(`- Include estimated costs for each activity.`);
+      parts.push(`- Do NOT suggest things the traveler cannot afford. Be honest.`);
+    }
+
     if (ctx.energyLevel) {
       const energyRules: Record<string, string> = {
         low: `ENERGY LEVEL: LOW — CRITICAL: Plan a RELAXED, gentle pace. Max 3-4 activities per day. Late starts (9:30-10:00). Long breaks (1-2 hours). End early (no events after 19:00). Prioritize sitting, cafés, easy walks. NO rushing between locations. Include 2+ breathing room breaks per day.`,
@@ -44,6 +57,8 @@ export class ClaudeItineraryService implements IItineraryService {
     parts.push(`
 Return ONLY a valid JSON object (no markdown, no explanation) with this exact structure:
 {
+  "budgetFeasible": true,
+  "budgetWarning": null,
   "days": [
     {
       "date": "YYYY-MM-DD",
@@ -54,7 +69,8 @@ Return ONLY a valid JSON object (no markdown, no explanation) with this exact st
           "type": "activity|food|transport|break|meeting|sightseeing|shopping",
           "title": "...",
           "description": "...",
-          "location": "...",
+          "location": "Real place name, ${ctx.destination}",
+          "cost": 0,
           "isGapSuggestion": false,
           "isBreathingRoom": false,
           "culturalNudge": "optional tip"
@@ -64,10 +80,18 @@ Return ONLY a valid JSON object (no markdown, no explanation) with this exact st
     }
   ],
   "documentChecklist": ["item1", "item2"],
-  "culturalNudges": ["tip1", "tip2"]
+  "culturalNudges": ["tip1", "tip2"],
+  "estimatedTotalCost": 0
 }
 
-Use real, well-known places in ${ctx.destination}. Include 6-8 events per day. Add at least one breathing room break per day (type: "break", isBreathingRoom: true). Language: ${ctx.lang || 'en'}.`);
+IMPORTANT:
+- If budget is NOT feasible for this destination, set "budgetFeasible": false and "budgetWarning" to a helpful message explaining why and what a realistic budget would be. Still generate an itinerary using the minimum realistic budget.
+- "location" must be a REAL place that exists in ${ctx.destination} — no made-up names.
+- "cost" is estimated cost per activity in the trip currency.
+- Use real, well-known places in ${ctx.destination}.
+- Include 6-8 events per day.
+- Add at least one breathing room break per day (type: "break", isBreathingRoom: true).
+- Language: ${ctx.lang || 'en'}.`);
     return parts.join('\n');
   }
 

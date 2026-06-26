@@ -6,6 +6,7 @@ import { ChevronRight, Palmtree, Mountain, Landmark, Utensils, Briefcase, Heart,
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useStore } from '../stores/useStore';
+import api from '../lib/api';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -107,6 +108,15 @@ export default function OnboardingChat() {
         endDate: answers.endDate || answers.end || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       };
       const result = await store.createTrip(tripData);
+
+      // Set budget on the trip via API
+      const budgetAmount = parseFloat(answers.budgetAmount || answers.budget) || 0;
+      const currency = answers.currency || 'USD';
+      if (budgetAmount > 0) {
+        try {
+          await api.patch(`/trips/${result.tripId}/budget`, { budget: budgetAmount, budgetCurrency: currency });
+        } catch (e) { console.warn('Budget update failed:', e); }
+      }
 
       // Store budget + origin in localStorage for other pages
       const budgetAmount = parseFloat(answers.budgetAmount || answers.budget) || 2000;

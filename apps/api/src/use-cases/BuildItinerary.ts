@@ -42,6 +42,12 @@ export class BuildItinerary {
       timeOfDay,
     };
 
+    // Add budget info if available on trip
+    if ((trip as any).budget && (trip as any).budget > 0) {
+      (context as any).budget = (trip as any).budget;
+      (context as any).currency = (trip as any).budgetCurrency || 'INR';
+    }
+
     // Enrich context with weather forecast
     try {
       const coords = await this.geocoding.getCoords(context.destination);
