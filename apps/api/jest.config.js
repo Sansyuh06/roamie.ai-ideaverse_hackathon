@@ -17,5 +17,5 @@ module.exports = {
     '^@infrastructure/(.*)$': '<rootDir>/src/infrastructure/$1',
     '^@data/(.*)$': '<rootDir>/src/data/$1'
   },
-  setupFilesAfterSetup: ['<rootDir>/src/__tests__/setup.ts']
+  setupFiles: ['<rootDir>/src/__tests__/setup.ts']
 };
