@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Calendar, Plane, Map, Plus, Shield, Receipt, Package, Globe, ArrowRight, Building2, Clock, CheckCircle2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Calendar, Plane, Map, Plus, Shield, Receipt, Package, Globe, ArrowRight, Building2, Clock, CheckCircle2, Trash2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../stores/useStore';
 import BookingSuggestions from '../components/BookingSuggestions';
@@ -10,6 +10,7 @@ const spring = { type: "spring" as const, stiffness: 260, damping: 20 };
 export default function Dashboard() {
   const navigate = useNavigate();
   const { trips, currentTrip, fetchTrips, fetchTrip, deleteTrip } = useStore();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTrips().then(() => {
@@ -21,6 +22,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (trips.length > 0 && !currentTrip) fetchTrip(trips[0].id);
   }, [trips, currentTrip]);
+
+  const handleDelete = async (tripId: string) => {
+    await deleteTrip(tripId);
+    setDeletingId(null);
+    fetchTrips();
+  };
 
   const daysUntil = currentTrip ? Math.max(0, Math.ceil((new Date(currentTrip.startDate).getTime() - Date.now()) / 86400000)) : 0;
   const tripDuration = currentTrip ? Math.max(1, Math.ceil((new Date(currentTrip.endDate).getTime() - new Date(currentTrip.startDate).getTime()) / 86400000)) : 0;
@@ -55,23 +62,92 @@ export default function Dashboard() {
       {/* Has trips */}
       {currentTrip && (
         <div className="space-y-6">
-          {/* Trip selector */}
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.05 }}
-            className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              {trips.length > 1 && (
-                <select value={currentTrip.id} onChange={e => fetchTrip(e.target.value)}
-                  className="px-4 py-2.5 bg-surface border-2 border-border rounded-xl text-sm font-medium focus:border-brand outline-none">
-                  {trips.map(t => <option key={t.id} value={t.id}>{t.destination}</option>)}
-                </select>
-              )}
+          {/* My Trips — Full Management */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.05 }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">My Trips ({trips.length})</h3>
+              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => navigate('/onboarding')}
+                className="btn-gradient px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 shadow-none">
+                <Plus size={14} /> New Trip
+              </motion.button>
             </div>
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              onClick={() => navigate('/onboarding')}
-              className="btn-gradient px-5 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center gap-2 shadow-none">
-              <Plus size={16} /> New Trip
-            </motion.button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {trips.map((trip: any, i: number) => (
+                <motion.div key={trip.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ ...spring, delay: i * 0.05 }}
+                  onClick={() => fetchTrip(trip.id)}
+                  className={`relative bg-surface border-2 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-md group ${
+                    currentTrip.id === trip.id ? 'border-brand-primary shadow-md' : 'border-border hover:border-brand-primary/30'
+                  }`}>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeletingId(trip.id); }}
+                    className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-error/10 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-error/20">
+                    <Trash2 size={13} />
+                  </button>
+
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-rose-500 flex items-center justify-center shrink-0">
+                      <Plane size={14} className="text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-text truncate">{trip.destination}</p>
+                      <p className="text-[11px] text-text-muted">
+                        {new Date(trip.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — {new Date(trip.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded-full font-bold ${trip.status === 'active' ? 'bg-success/10 text-success' : 'bg-border text-text-muted'}`}>
+                      {trip.status}
+                    </span>
+                    {trip.flights?.length > 0 && <span className="text-text-muted">✈️ {trip.flights.length}</span>}
+                    {trip.hotels?.length > 0 && <span className="text-text-muted">🏨 {trip.hotels.length}</span>}
+                    {trip.itinerary?.length > 0 && <span className="text-text-muted">📅 {trip.itinerary.length}d</span>}
+                  </div>
+                  {currentTrip.id === trip.id && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-brand-primary rounded-full border-2 border-surface" />
+                  )}
+                </motion.div>
+              ))}
+            </div>
           </motion.div>
+
+          {/* Delete Confirmation Modal */}
+          <AnimatePresence>
+            {deletingId && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                onClick={() => setDeletingId(null)}>
+                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+                  onClick={e => e.stopPropagation()}
+                  className="bg-surface rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-border">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                      <Trash2 size={18} className="text-error" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-text">Delete Trip?</h3>
+                      <p className="text-xs text-text-muted">This will permanently remove this trip and all its data.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setDeletingId(null)}
+                      className="flex-1 py-2.5 rounded-xl border-2 border-border text-sm font-semibold text-text-secondary hover:bg-border-light transition-colors">
+                      Cancel
+                    </button>
+                    <button onClick={() => handleDelete(deletingId)}
+                      className="flex-1 py-2.5 rounded-xl bg-error text-white text-sm font-semibold hover:bg-red-600 transition-colors">
+                      Delete
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Trip Hero Card */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.1 }}
