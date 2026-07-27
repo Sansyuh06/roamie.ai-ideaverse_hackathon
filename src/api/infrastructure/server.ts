@@ -45,6 +45,10 @@ export function createApp() {
   app.use('/api/', generalLimiter);
   app.use(i18nMiddleware);
 
+  app.get('/', (req, res) => {
+    res.json({ status: 'ok', name: 'Roamie Concierge API Server', health: '/api/health' });
+  });
+
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '2.0.0' });
   });
