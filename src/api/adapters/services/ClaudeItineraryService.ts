@@ -105,12 +105,16 @@ IMPORTANT:
         temperature: 0.7,
       });
 
-      // Strip markdown code fences if present
-      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      // Robustly extract JSON object from the response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON object found in LLM response');
+      }
+      
+      const parsed = JSON.parse(jsonMatch[0]);
       return parsed as ItineraryPlan;
     } catch (error) {
-      console.warn('Bedrock LLM failed, using fallback:', (error as Error).message);
+      console.warn('Primary LLM failed, using fallback:', (error as Error).message);
       return this.fallback.generateItinerary(context);
     }
   }

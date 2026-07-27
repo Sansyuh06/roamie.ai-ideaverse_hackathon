@@ -64,26 +64,31 @@ export class LLMAdapter {
     }
     messages.push({ role: "user", content: prompt });
 
-    const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "llama-3.3-70b-versatile",
-        messages,
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens || 2048,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${groqKey}`,
-          "Content-Type": "application/json",
+    try {
+      const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama-3.3-70b-versatile",
+          messages,
+          temperature: options.temperature ?? 0.7,
+          max_tokens: Math.min(options.maxTokens || 4096, 8192), // Cap to prevent API rejection
         },
-        timeout: 30000,
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 45000, // Increased timeout to 45s for large itineraries
+        }
+      );
 
-    const text = response.data?.choices?.[0]?.message?.content;
-    if (text) return text;
-    throw new Error("Empty response from Groq API");
+      const text = response.data?.choices?.[0]?.message?.content;
+      if (text) return text;
+      throw new Error("Empty response from Groq API");
+    } catch (e: any) {
+      console.error("GROQ API ERROR:", e.response?.data || e.message);
+      throw e; // rethrow so it can fallback properly
+    }
   }
 
   private async invokeBedrock(modelId: string, prompt: string, options: LLMInvokeOptions): Promise<string> {
