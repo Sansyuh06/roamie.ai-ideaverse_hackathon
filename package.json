@@ -7,6 +7,7 @@
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "ts-node-dev --project src/api/tsconfig.json --respawn --transpile-only src/api/index.ts",
     "dev:web": "vite",
+    "start": "node src/api/dist/index.js",
     "build": "npm run prisma:generate && tsc -p src/api/tsconfig.json",
     "build:api": "npm run prisma:generate && tsc -p src/api/tsconfig.json",
     "build:web": "vite build",
