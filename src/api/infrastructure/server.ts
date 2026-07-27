@@ -24,6 +24,8 @@ import safetyController from '../adapters/controllers/safety.controller';
 import visaController from '../adapters/controllers/visa.controller';
 import memoryController from '../adapters/controllers/memory.controller';
 import feedbackController, { getFeedbackRoutes } from '../adapters/controllers/feedback.controller';
+import adminController from '../adapters/controllers/admin.controller';
+import notifyController from '../adapters/controllers/notify.controller';
 import { authMiddleware } from './middleware/auth';
 
 export function createApp() {
@@ -68,6 +70,8 @@ export function createApp() {
   app.use('/api/memory', memoryController);
   app.use('/api/feedback', feedbackController);
   app.use('/api/admin/feedback', getFeedbackRoutes(authMiddleware));
+  app.use('/api/admin', adminController);
+  app.use('/api/notify', notifyController);
 
   app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Unhandled error:', err);

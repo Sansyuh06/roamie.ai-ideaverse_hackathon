@@ -2,30 +2,26 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../../infrastructure/middleware/auth';
 import { TriggerDisruptionShield } from '../../use-cases/TriggerDisruptionShield';
-import { PrismaTripRepository } from '../repositories/PrismaTripRepository';
-import { RealFlightService } from '../services/RealFlightService';
-import { ClaudeItineraryService } from '../services/ClaudeItineraryService';
-import { QRCodeService } from '../services/QRCodeService';
+import { AmadeusFlightService } from '../services/AmadeusFlightService';
+import { AviationStackService } from '../services/AviationStackService';
+import { NotificationPipeline } from '../services/NotificationPipeline';
+import { AlternativeFlight } from '../../domain/entities';
 import { disruptionLimiter } from '../../infrastructure/middleware/rateLimiter';
 import prisma from '../../infrastructure/database';
 
 const router = Router();
-const tripRepo = new PrismaTripRepository();
-const flightService = new RealFlightService();
-const itineraryService = new ClaudeItineraryService();
-const qrService = new QRCodeService();
-const disruptionShield = new TriggerDisruptionShield(tripRepo, flightService, itineraryService, qrService);
-
-// Store pending confirmations in memory (demo purposes)
-const pendingConfirmations = new Map<string, { flightNumber: string; amount: number; tripId: string; status: string }>();
+const flightService = new AmadeusFlightService();
+const aviationStack = new AviationStackService();
+const notifyPipeline = new NotificationPipeline();
+const disruptionShield = new TriggerDisruptionShield(flightService, aviationStack, notifyPipeline);
 
 const triggerSchema = z.object({
   tripId: z.string().min(1),
   flightId: z.string().min(1),
-  disruptionType: z.enum(['cancelled', 'delayed', 'missed']),
-  simulateZeroFlights: z.boolean().optional().default(false),
+  disruptionType: z.enum(['cancelled', 'delayed', 'missed'])
 });
 
+// Trigger disruption (Now uses real Amadeus APIs via TriggerDisruptionShield)
 router.post('/trigger', authMiddleware, disruptionLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const parsed = triggerSchema.safeParse(req.body);
@@ -34,109 +30,147 @@ router.post('/trigger', authMiddleware, disruptionLimiter, async (req: AuthReque
       return;
     }
 
-    // Ownership check
     const trip = await prisma.trip.findUnique({ where: { id: parsed.data.tripId } });
-    if (!trip) {
-      res.status(404).json({ error: 'Trip not found', code: 'NOT_FOUND' });
-      return;
-    }
-    if (trip.userId !== req.userId) {
-      res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
+    if (!trip || trip.userId !== req.userId) {
+      res.status(404).json({ error: 'Trip not found or unauthorized', code: 'NOT_FOUND' });
       return;
     }
 
     const resolution = await disruptionShield.execute({
       tripId: parsed.data.tripId,
       flightId: parsed.data.flightId,
-      disruptionType: parsed.data.disruptionType,
-      simulateZeroFlights: parsed.data.simulateZeroFlights,
-      lang: req.lang,
-    });
-
-    // Store pending confirmation
-    pendingConfirmations.set(resolution.confirmationToken, {
-      flightNumber: resolution.selectedFlight.flightNumber,
-      amount: resolution.selectedFlight.price,
-      tripId: parsed.data.tripId,
-      status: 'pending',
+      disruptionType: parsed.data.disruptionType
     });
 
     res.json(resolution);
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    if (msg.includes('not found')) {
-      res.status(404).json({ error: msg, code: 'NOT_FOUND' });
-      return;
-    }
     res.status(500).json({ error: msg, code: 'SERVER_ERROR' });
   }
 });
 
-// Confirm disruption resolution via QR token
-router.post('/confirm/:token', async (req, res: Response) => {
+// Get disruption detail
+router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { token } = req.params;
-    const pending = pendingConfirmations.get(token);
+    const disruption: any = await prisma.disruption.findUnique({
+      where: { id: req.params.id as string },
+      include: {
+        alternatives: {
+          orderBy: { rank: 'asc' }
+        },
+        trip: true
+      }
+    });
 
-    if (!pending) {
-      res.status(404).json({ error: 'Confirmation token not found or expired', code: 'NOT_FOUND' });
+    if (!disruption) {
+      res.status(404).json({ error: 'Disruption not found', code: 'NOT_FOUND' });
       return;
     }
 
-    pending.status = 'confirmed';
-    pendingConfirmations.set(token, pending);
-
-    // Update trip status
-    await prisma.trip.update({
-      where: { id: pending.tripId },
-      data: { status: 'active' },
-    });
-
-    res.json({
-      message: 'Booking confirmed successfully',
-      flightNumber: pending.flightNumber,
-      amount: pending.amount,
-      status: 'confirmed',
-    });
-  } catch {
-    res.status(500).json({ error: 'Failed to confirm booking', code: 'SERVER_ERROR' });
-  }
-});
-
-// Cancel disruption resolution via QR token
-router.post('/cancel/:token', async (req, res: Response) => {
-  try {
-    const { token } = req.params;
-    const pending = pendingConfirmations.get(token);
-
-    if (!pending) {
-      res.status(404).json({ error: 'Confirmation token not found or expired', code: 'NOT_FOUND' });
+    if (disruption.trip.userId !== req.userId) {
+      res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
       return;
     }
 
-    pending.status = 'cancelled';
-    pendingConfirmations.set(token, pending);
-
-    res.json({
-      message: 'Booking cancelled',
-      flightNumber: pending.flightNumber,
-      status: 'cancelled',
-    });
-  } catch {
-    res.status(500).json({ error: 'Failed to cancel booking', code: 'SERVER_ERROR' });
+    res.json({ disruption });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error', code: 'SERVER_ERROR' });
   }
 });
 
-// Get disruption log for a trip
-router.get('/log/:tripId', authMiddleware, async (req: AuthRequest, res: Response) => {
+// Confirm top alternative
+router.post('/:id/confirm', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const logs = await prisma.disruptionLog.findMany({
-      where: { tripId: req.params.tripId as string },
-      orderBy: { detectedAt: 'desc' },
+    const disruption: any = await prisma.disruption.findUnique({
+      where: { id: req.params.id as string },
+      include: { alternatives: { where: { rank: 1 } }, trip: true }
     });
-    res.json({ logs });
-  } catch {
-    res.status(500).json({ error: 'Failed to fetch disruption log', code: 'SERVER_ERROR' });
+
+    if (!disruption || disruption.trip.userId !== req.userId) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const alt = disruption.alternatives[0];
+    if (!alt) {
+      res.status(400).json({ error: 'No alternative to confirm', code: 'BAD_REQUEST' });
+      return;
+    }
+
+    if (alt.holdExpiresAt < new Date()) {
+      res.status(400).json({ error: 'Hold expired', code: 'EXPIRED' });
+      return;
+    }
+
+    await prisma.alternative.update({ where: { id: alt.id }, data: { holdStatus: 'confirmed' } });
+    await prisma.disruption.update({ where: { id: disruption.id }, data: { status: 'resolved', confirmedAt: new Date() } });
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'user_confirmed', detail: `Confirmed ${alt.flightNumber}` }
+    });
+
+    res.json({ message: 'Confirmed successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// Choose a specific alternative
+router.post('/:id/choose/:altId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const disruption: any = await prisma.disruption.findUnique({
+      where: { id: req.params.id as string },
+      include: { trip: true }
+    });
+
+    if (!disruption || disruption.trip.userId !== req.userId) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const alt = await prisma.alternative.findUnique({ where: { id: req.params.altId as string } });
+    if (!alt || alt.disruptionId !== disruption.id) {
+      res.status(404).json({ error: 'Alternative not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    if (alt.holdExpiresAt < new Date()) {
+      res.status(400).json({ error: 'Hold expired', code: 'EXPIRED' });
+      return;
+    }
+
+    await prisma.alternative.update({ where: { id: alt.id }, data: { holdStatus: 'confirmed' } });
+    await prisma.disruption.update({ where: { id: disruption.id }, data: { status: 'resolved', confirmedAt: new Date() } });
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'user_chose_different', detail: `User selected ${alt.flightNumber}` }
+    });
+
+    res.json({ message: 'Alternative chosen successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// Get Audit Log
+router.get('/:id/audit', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const disruption: any = await prisma.disruption.findUnique({
+      where: { id: req.params.id as string },
+      include: { trip: true }
+    });
+
+    if (!disruption || disruption.trip.userId !== req.userId) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const audit = await prisma.auditEntry.findMany({
+      where: { disruptionId: disruption.id },
+      orderBy: { timestamp: 'desc' }
+    });
+
+    res.json({ audit });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error', code: 'SERVER_ERROR' });
   }
 });
 

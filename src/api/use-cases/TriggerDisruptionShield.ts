@@ -1,246 +1,178 @@
-import { v4 as uuidv4 } from 'uuid';
-import { ITripRepository, IItineraryService, IFlightService } from '../domain/interfaces';
-import { DisruptionResolution, ItineraryDayEntity, TripContext, DisruptionStep } from '../domain/entities';
-import { QRCodeService } from '../adapters/services/QRCodeService';
+import { PrismaClient } from '@prisma/client';
+import { IFlightService } from '../domain/interfaces';
+import { AviationStackService } from '../adapters/services/AviationStackService';
+import { PolicyEngine } from './PolicyEngine';
+import { RankingEngine } from './RankingEngine';
+import { ReasoningEngine } from './ReasoningEngine';
+import { NotificationPipeline } from '../adapters/services/NotificationPipeline';
+
+const prisma = new PrismaClient();
 
 export class TriggerDisruptionShield {
   constructor(
-    private tripRepo: ITripRepository,
     private flightService: IFlightService,
-    private itineraryService: IItineraryService,
-    private qrService: QRCodeService,
+    private aviationStack: AviationStackService,
+    private notifyPipeline: NotificationPipeline
   ) {}
 
   async execute(params: {
     tripId: string;
     flightId: string;
     disruptionType: 'cancelled' | 'delayed' | 'missed';
-    simulateZeroFlights?: boolean;
-    lang?: string;
-    onProgress?: (step: DisruptionStep) => void;
-  }): Promise<DisruptionResolution> {
-    const startTime = Date.now();
-    const emit = (step: DisruptionStep) => params.onProgress?.(step);
-
-    const steps: DisruptionStep[] = [
-      { step: 1, label: 'Detecting disruption', status: 'pending' },
-      { step: 2, label: 'Finding alternative flights', status: 'pending' },
-      { step: 3, label: 'Scoring & selecting best option', status: 'pending' },
-      { step: 4, label: 'Shifting hotel check-in', status: 'pending' },
-      { step: 5, label: 'Rescheduling cab pickup', status: 'pending' },
-      { step: 6, label: 'Rebuilding itinerary', status: 'pending' },
-      { step: 7, label: 'Generating QR confirmation', status: 'pending' },
-    ];
-
-    // Step 1: Detect and load context
-    steps[0].status = 'in-progress';
-    emit(steps[0]);
-
-    const trip = await this.tripRepo.findTripById(params.tripId);
+  }): Promise<{ disruptionId: string; message: string }> {
+    
+    // 1. Load Trip & User
+    const trip = await prisma.trip.findUnique({
+      where: { id: params.tripId },
+      include: { user: true }
+    });
     if (!trip) throw new Error('Trip not found');
 
-    const flight = await this.tripRepo.findFlightById(params.flightId) ?? {
-      id: params.flightId,
-      tripId: params.tripId,
-      flightNumber: 'XX-MOCK',
-      origin: 'Home City',
-      destination: trip.destination,
-      departureTime: trip.startDate,
-      arrivalTime: new Date(trip.startDate.getTime() + 3 * 3600000),
-      airline: 'Demo Airlines',
-      status: 'confirmed',
-      price: 5000,
-      seatClass: 'economy',
-      confirmationCode: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const flight = await prisma.flightBooking.findUnique({
+      where: { id: params.flightId }
+    });
+    if (!flight) throw new Error('Flight not found');
 
-    const user = await this.tripRepo.findUserById(trip.userId);
-    if (!user) throw new Error('User not found');
-
-    const hotels = await this.tripRepo.findHotelsByTripId(params.tripId);
-    const hotel = hotels[0];
-    const cabs = await this.tripRepo.findCabsByTripId(params.tripId);
-    const cab = cabs[0];
-
-    steps[0].status = 'completed';
-    steps[0].detail = `${params.disruptionType.toUpperCase()}: ${flight.flightNumber} ${flight.origin}→${flight.destination}`;
-    emit(steps[0]);
-
-    // Step 2: Find alternatives
-    steps[1].status = 'in-progress';
-    emit(steps[1]);
-
-    let alternativeFlights: import('../domain/entities').AlternativeFlight[] = [];
-    if (params.simulateZeroFlights) {
-      alternativeFlights = [];
-    } else {
-      try {
-        alternativeFlights = await this.flightService.findAlternatives(
-          flight.origin,
-          flight.destination,
-          flight.departureTime,
-          { seatPreference: user.seatPreference || undefined, originalPrice: flight.price }
-        );
-      } catch {
-        throw new Error('Failed to find alternative flights');
-      }
-    }
-    if (!params.simulateZeroFlights && alternativeFlights.length === 0) {
-      throw new Error('No alternative flights available');
-    }
-
-    steps[1].status = 'completed';
-    steps[1].detail = `${alternativeFlights.length} alternatives found`;
-    emit(steps[1]);
-
-    // Step 3: Score and select
-    steps[2].status = 'in-progress';
-    emit(steps[2]);
-
-    const selectedFlight = alternativeFlights[0]; // Already sorted by score
-    steps[2].status = 'completed';
-    steps[2].detail = `${selectedFlight.flightNumber} selected (score: ${selectedFlight.score?.toFixed(2) ?? 'N/A'})`;
-    emit(steps[2]);
-
-    // Step 4: Shift hotel
-    steps[3].status = 'in-progress';
-    emit(steps[3]);
-
-    const originalHotelCheckIn = hotel ? new Date(hotel.checkIn) : new Date();
-    const updatedHotelCheckIn = new Date(selectedFlight.arrivalTime);
-    updatedHotelCheckIn.setHours(updatedHotelCheckIn.getHours() + 2);
-
-    if (hotel) {
-      try {
-        await this.tripRepo.updateHotel(hotel.id, { checkIn: updatedHotelCheckIn });
-      } catch (e) { console.warn('Hotel update failed:', e); }
-    }
-
-    steps[3].status = 'completed';
-    steps[3].detail = `Check-in shifted to ${updatedHotelCheckIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    emit(steps[3]);
-
-    // Step 5: Reschedule cab
-    steps[4].status = 'in-progress';
-    emit(steps[4]);
-
-    const originalCabTime = cab ? new Date(cab.pickupTime) : new Date();
-    const updatedCabTime = new Date(selectedFlight.arrivalTime);
-    updatedCabTime.setMinutes(updatedCabTime.getMinutes() + 45);
-
-    if (cab) {
-      try {
-        await this.tripRepo.updateCab(cab.id, { pickupTime: updatedCabTime });
-      } catch (e) { console.warn('Cab update failed:', e); }
-    }
-
-    steps[4].status = 'completed';
-    steps[4].detail = `Pickup rescheduled to ${updatedCabTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    emit(steps[4]);
-
-    // Step 6: Rebuild itinerary
-    steps[5].status = 'in-progress';
-    emit(steps[5]);
-
-    let updatedItinerary: ItineraryDayEntity[];
-    try {
-      const context: TripContext = {
-        destination: trip.destination,
-        startDate: trip.startDate.toISOString().split('T')[0],
-        endDate: trip.endDate.toISOString().split('T')[0],
-        tripPurpose: user.tripPurpose,
-        savedPlaces: [],
-        calendarEvents: [{
-          title: `Flight ${selectedFlight.flightNumber} arrives`,
-          start: selectedFlight.arrivalTime.toISOString(),
-          end: new Date(selectedFlight.arrivalTime.getTime() + 60 * 60 * 1000).toISOString(),
-          location: flight.destination,
-        }],
-        dietaryPref: user.dietaryPref,
-        lang: params.lang || user.preferredLang || 'en',
-      };
-
-      const plan = await this.itineraryService.generateItinerary(context);
-      updatedItinerary = plan.days.map((day) => ({
-        id: uuidv4(),
-        tripId: params.tripId,
-        date: new Date(day.date),
-        events: day.events,
-        freeGaps: day.freeGaps,
-        previousVersion: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
-    } catch {
-      const existingDays = await this.tripRepo.findItineraryDays(params.tripId);
-      updatedItinerary = existingDays.map((day) => ({
-        ...day,
-        events: day.events.map((e) => ({
-          ...e,
-          description: `[Updated after disruption] ${e.description}`,
-        })),
-      }));
-    }
-
-    steps[5].status = 'completed';
-    steps[5].detail = `${updatedItinerary.length} days rebuilt`;
-    emit(steps[5]);
-
-    // Step 7: Generate QR
-    steps[6].status = 'in-progress';
-    emit(steps[6]);
-
-    const confirmationToken = uuidv4().substring(0, 8);
-    const qrUrl = `https://roamie.app/confirm/${confirmationToken}?action=pay&amount=${selectedFlight.price}&currency=INR&flight=${selectedFlight.flightNumber}`;
-    let qrCodeData = '';
-    try {
-      qrCodeData = await this.qrService.generateQR(qrUrl);
-    } catch { qrCodeData = ''; }
-
-    // Update records
-    try {
-      await this.tripRepo.updateFlight(params.flightId, { status: params.disruptionType });
-      await this.tripRepo.updateTrip(params.tripId, { status: 'disrupted' });
-      await this.tripRepo.createDisruptionLog({
+    // 2. Create initial Disruption record
+    const disruption = await prisma.disruption.create({
+      data: {
         tripId: params.tripId,
         flightId: params.flightId,
         type: params.disruptionType,
-        detectedAt: new Date(),
-        resolvedAt: new Date(),
-        resolution: JSON.stringify({
-          selectedFlight: selectedFlight.flightNumber,
-          hotelShifted: !!hotel,
-          cabShifted: !!cab,
-        }),
+        source1: 'amadeus',
+        source1Status: 'pending',
+        source2: 'aviationstack',
+        source2Status: 'pending'
+      }
+    });
+
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'disruption_detected', detail: `Detected ${params.disruptionType} for ${flight.flightNumber}` }
+    });
+
+    // 3. Confirm with Amadeus & AviationStack
+    const [amadeusStatus, aviationStatus] = await Promise.all([
+      this.flightService.checkStatus ? this.flightService.checkStatus(flight.airline, flight.flightNumber, flight.departureTime) : Promise.resolve({ status: 'unknown' }),
+      this.aviationStack.checkStatus(flight.flightNumber)
+    ]);
+
+    await prisma.disruption.update({
+      where: { id: disruption.id },
+      data: {
+        source1Status: amadeusStatus.status,
+        source2Status: aviationStatus.status,
+        status: 'confirmed', // Assuming confirmed for demo purposes
+        confirmedAt: new Date()
+      }
+    });
+
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'sources_cross_referenced', detail: `Amadeus: ${amadeusStatus.status}, AviationStack: ${aviationStatus.status}` }
+    });
+
+    // 4. Search Alternatives
+    const alternatives = await this.flightService.findAlternatives(
+      flight.origin,
+      flight.destination,
+      flight.departureTime,
+      { originalPrice: flight.price }
+    );
+
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'amadeus_search_triggered', detail: `Found ${alternatives.length} raw flights` }
+    });
+
+    // 5. Apply Policy Filter
+    const cardTier = trip.user.cardTier || 'gold';
+    const { valid, excluded } = PolicyEngine.filterAlternatives(alternatives, cardTier);
+
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'policy_filter_applied', detail: `${excluded.length} flights excluded by ${cardTier} policy` }
+    });
+
+    // 6. Rank Alternatives
+    const ranked = RankingEngine.rank(valid, flight.arrivalTime, flight.price);
+    const top3 = ranked.slice(0, 3);
+
+    await prisma.auditEntry.create({
+      data: { disruptionId: disruption.id, event: 'alternatives_ranked', detail: `Top pick: ${top3[0]?.flightNumber}` }
+    });
+
+    // 7. Save Alternatives to DB
+    const holdExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    
+    for (let i = 0; i < top3.length; i++) {
+      await prisma.alternative.create({
+        data: {
+          disruptionId: disruption.id,
+          flightNumber: top3[i].flightNumber,
+          airline: top3[i].airline,
+          origin: top3[i].origin,
+          destination: top3[i].destination,
+          departureTime: top3[i].departureTime,
+          arrivalTime: top3[i].arrivalTime,
+          price: top3[i].price,
+          seatClass: top3[i].seatClass,
+          utilityScore: top3[i].utilityScore,
+          rank: i + 1,
+          holdExpiresAt: holdExpiry
+        }
       });
-    } catch (error) {
-      console.warn('Failed to update records:', error);
     }
 
-    steps[6].status = 'completed';
-    steps[6].detail = 'QR card ready';
-    emit(steps[6]);
+    for (const ex of excluded) {
+      await prisma.alternative.create({
+        data: {
+          disruptionId: disruption.id,
+          flightNumber: ex.flightNumber,
+          airline: ex.airline,
+          origin: ex.origin,
+          destination: ex.destination,
+          departureTime: ex.departureTime,
+          arrivalTime: ex.arrivalTime,
+          price: ex.price,
+          seatClass: ex.seatClass,
+          utilityScore: 0,
+          rank: 99,
+          excluded: true,
+          exclusionReason: ex.exclusionReason,
+          holdExpiresAt: holdExpiry
+        }
+      });
+    }
 
-    const totalResolutionTimeMs = Date.now() - startTime;
+    // 8. Generate Reasoning
+    const reasoning = ReasoningEngine.generate(
+      { flightNumber: flight.flightNumber, status: params.disruptionType },
+      alternatives.length,
+      top3,
+      excluded,
+      cardTier
+    );
 
-    return {
-      steps,
-      alternativeFlights: alternativeFlights.slice(0, 3),
-      selectedFlight,
-      updatedHotelCheckIn,
-      originalHotelCheckIn,
-      updatedCabBooking: {
-        pickup: cab?.pickup || `${flight.destination} Airport`,
-        dropoff: cab?.dropoff || (hotel ? hotel.hotelName : `Hotel in ${trip.destination}`),
-        time: updatedCabTime,
-        originalTime: originalCabTime,
-      },
-      updatedItinerary,
-      qrCodeData,
-      confirmationToken,
-      totalResolutionTimeMs,
-    };
+    // Save reasoning in disruption resolution field for now
+    await prisma.disruption.update({
+      where: { id: disruption.id },
+      data: { resolution: JSON.stringify({ reasoning }), status: 'awaiting_confirmation' }
+    });
+
+    // 9. Send Notifications
+    if (trip.user.phone) {
+      const smsBody = `AMEX: Flight ${flight.flightNumber} to ${flight.destination} ${params.disruptionType}. Open the app or check WhatsApp for rebooking options. Ref: ${disruption.id}`;
+      await this.notifyPipeline.sendSMS(trip.user.phone, smsBody);
+      await prisma.auditEntry.create({
+        data: { disruptionId: disruption.id, event: 'user_notified_sms', detail: 'SMS sent' }
+      });
+    }
+
+    if (trip.user.phone && trip.user.whatsappEnabled) {
+      await this.notifyPipeline.sendWhatsApp(trip.user.phone, disruption.id, flight.flightNumber, top3[0]);
+      await prisma.auditEntry.create({
+        data: { disruptionId: disruption.id, event: 'user_notified_whatsapp', detail: 'WhatsApp rich card sent' }
+      });
+    }
+
+    return { disruptionId: disruption.id, message: 'Pipeline executed successfully' };
   }
 }
+

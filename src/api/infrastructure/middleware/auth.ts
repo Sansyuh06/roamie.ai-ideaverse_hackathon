@@ -15,10 +15,17 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   }
   const token = authHeader.split(' ')[1];
   try {
-    const payload = jwt.verify(token, config.JWT_SECRET) as { userId: string };
-    req.userId = payload.userId;
+    const secret = process.env.SUPABASE_JWT_SECRET || config.JWT_SECRET;
+    // Supabase payload structure uses 'sub' for the user ID
+    const payload = jwt.verify(token, secret) as { sub?: string; userId?: string };
+    req.userId = payload.sub || payload.userId; // Support both Supabase and legacy tokens
+    
+    if (!req.userId) {
+      throw new Error('No user ID found in token');
+    }
+    
     next();
-  } catch {
+  } catch (error) {
     res.status(401).json({ error: 'Invalid or expired token', code: 'UNAUTHORIZED' });
   }
 }
@@ -28,8 +35,9 @@ export async function optionalAuth(req: AuthRequest, res: Response, next: NextFu
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
-      const payload = jwt.verify(token, config.JWT_SECRET) as { userId: string };
-      req.userId = payload.userId;
+      const secret = process.env.SUPABASE_JWT_SECRET || config.JWT_SECRET;
+      const payload = jwt.verify(token, secret) as { sub?: string; userId?: string };
+      req.userId = payload.sub || payload.userId;
     } catch {
       // ignore, optional
     }

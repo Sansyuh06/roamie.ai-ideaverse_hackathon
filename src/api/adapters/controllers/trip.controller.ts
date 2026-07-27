@@ -203,7 +203,14 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) =>
       res.status(404).json({ error: 'Trip not found', code: 'NOT_FOUND' });
       return;
     }
-    await prisma.disruptionLog.deleteMany({ where: { tripId } });
+    // Delete disruption-related records first (FK constraints)
+    const disruptions = await prisma.disruption.findMany({ where: { tripId }, select: { id: true } });
+    const disruptionIds = disruptions.map(d => d.id);
+    if (disruptionIds.length > 0) {
+      await prisma.auditEntry.deleteMany({ where: { disruptionId: { in: disruptionIds } } });
+      await prisma.alternative.deleteMany({ where: { disruptionId: { in: disruptionIds } } });
+    }
+    await prisma.disruption.deleteMany({ where: { tripId } });
     await prisma.expense.deleteMany({ where: { tripId } });
     await prisma.cabBooking.deleteMany({ where: { tripId } });
     await prisma.hotelBooking.deleteMany({ where: { tripId } });

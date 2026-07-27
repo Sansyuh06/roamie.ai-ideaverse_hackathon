@@ -4,7 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,7 +13,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": "./src",
+    "baseUrl": "./",
     "paths": {
       "@domain/*": ["domain/*"],
       "@use-cases/*": ["use-cases/*"],
@@ -22,6 +22,6 @@
       "@data/*": ["data/*"]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/__tests__"]
+  "include": ["./**/*"],
+  "exclude": ["node_modules", "dist", "__tests__"]
 }

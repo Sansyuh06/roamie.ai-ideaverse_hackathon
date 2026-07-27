@@ -1,7 +1,7 @@
 import {
   TripEntity, ItineraryDayEntity, FlightBookingEntity,
   HotelBookingEntity, CabBookingEntity, UserEntity,
-  DisruptionLogEntity, TripContext, ItineraryPlan,
+  TripContext, ItineraryPlan,
   AlternativeFlight, PackingItem, DocChecklistItem,
   LawNudge, WeatherForecast
 } from '../entities';
@@ -22,7 +22,6 @@ export interface ITripRepository {
   findCabsByTripId(tripId: string): Promise<CabBookingEntity[]>;
   updateCab(id: string, data: Partial<CabBookingEntity>): Promise<CabBookingEntity>;
   findUserById(id: string): Promise<UserEntity | null>;
-  createDisruptionLog(data: Omit<DisruptionLogEntity, 'id' | 'createdAt'>): Promise<DisruptionLogEntity>;
 }
 
 export interface IItineraryService {
@@ -36,6 +35,12 @@ export interface IFlightService {
     date: Date,
     preferences?: { seatPreference?: string; originalPrice?: number }
   ): Promise<AlternativeFlight[]>;
+  
+  checkStatus?(
+    carrierCode: string,
+    flightNumber: string,
+    date: Date
+  ): Promise<{ status: string; actualDeparture?: Date; actualArrival?: Date }>;
 }
 
 export interface IExpenseService {

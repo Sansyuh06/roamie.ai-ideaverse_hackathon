@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -20,6 +21,13 @@ model User {
   paymentBalance  Float     @default(10000)
   travelProfile   String    @default("{}")
   isAdmin         Boolean   @default(false)
+  
+  // New fields for Disruption Concierge
+  cardTier        String    @default("gold")
+  phone           String?
+  whatsappEnabled Boolean   @default(false)
+  supabaseId      String?   @unique
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   trips           Trip[]
@@ -51,7 +59,7 @@ model Trip {
   flights        FlightBooking[]
   hotels         HotelBooking[]
   cabs           CabBooking[]
-  disruptions    DisruptionLog[]
+  disruptions    Disruption[]
   notes          ItineraryNote[]
 
   @@index([userId])
@@ -144,18 +152,61 @@ model Expense {
   @@index([tripId])
 }
 
-model DisruptionLog {
-  id          String   @id @default(uuid())
-  tripId      String
-  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  flightId    String
-  type        String
-  detectedAt  DateTime @default(now())
-  resolvedAt  DateTime?
-  resolution  String   @default("{}")
-  createdAt   DateTime @default(now())
+model Disruption {
+  id              String    @id @default(uuid())
+  tripId          String
+  flightId        String
+  type            String
+  status          String    @default("detected")
+  detectedAt      DateTime  @default(now())
+  confirmedAt     DateTime?
+  source1         String
+  source1Status   String
+  source2         String
+  source2Status   String
+  resolution      String?
+  trip            Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  alternatives    Alternative[]
+  auditLog        AuditEntry[]
 
   @@index([tripId])
+}
+
+model Alternative {
+  id              String    @id @default(uuid())
+  disruptionId    String
+  flightNumber    String
+  airline         String
+  origin          String
+  destination     String
+  departureTime   DateTime
+  arrivalTime     DateTime
+  price           Float
+  currency        String    @default("INR")
+  seatClass       String
+  alliance        String?
+  utilityScore    Float
+  rank            Int
+  excluded        Boolean   @default(false)
+  exclusionReason String?
+  holdStatus      String    @default("held")
+  holdExpiresAt   DateTime
+  createdAt       DateTime  @default(now())
+  disruption      Disruption @relation(fields: [disruptionId], references: [id], onDelete: Cascade)
+
+  @@index([disruptionId])
+}
+
+model AuditEntry {
+  id              String    @id @default(uuid())
+  disruptionId    String
+  event           String
+  detail          String
+  metadata        String?
+  timestamp       DateTime  @default(now())
+  disruption      Disruption @relation(fields: [disruptionId], references: [id], onDelete: Cascade)
+
+  @@index([disruptionId])
 }
 
 model ItineraryNote {

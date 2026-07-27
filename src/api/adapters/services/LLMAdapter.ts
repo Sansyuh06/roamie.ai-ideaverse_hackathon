@@ -26,6 +26,15 @@ export class LLMAdapter {
   }
 
   async invoke(prompt: string, options: LLMInvokeOptions = {}): Promise<string> {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+      try {
+        return await this.invokeGroq(prompt, options);
+      } catch (e: any) {
+        console.warn("Groq AI invocation failed, falling back:", e.message);
+      }
+    }
+
     const useBedrock = process.env.USE_BEDROCK !== "false";
 
     if (useBedrock) {
@@ -45,6 +54,36 @@ export class LLMAdapter {
 
     // Final fallback: Ollama
     return await this.invokeOllama(prompt, options);
+  }
+
+  private async invokeGroq(prompt: string, options: LLMInvokeOptions): Promise<string> {
+    const groqKey = process.env.GROQ_API_KEY;
+    const messages: any[] = [];
+    if (options.system) {
+      messages.push({ role: "system", content: options.system });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages,
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxTokens || 2048,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
+
+    const text = response.data?.choices?.[0]?.message?.content;
+    if (text) return text;
+    throw new Error("Empty response from Groq API");
   }
 
   private async invokeBedrock(modelId: string, prompt: string, options: LLMInvokeOptions): Promise<string> {

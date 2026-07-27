@@ -4,6 +4,11 @@ import { Calendar, Plane, Map, Plus, Shield, Receipt, Package, Globe, ArrowRight
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../stores/useStore';
 import BookingSuggestions from '../components/BookingSuggestions';
+import { supabase } from '../lib/supabase';
+import DisruptionView from './DisruptionView';
+import AdminPanel from '../components/AdminPanel';
+import ReasoningPanel from '../components/ReasoningPanel';
+import AuditLogPanel from '../components/AuditLogPanel';
 
 const spring = { type: "spring" as const, stiffness: 260, damping: 20 };
 
@@ -22,6 +27,28 @@ export default function Dashboard() {
   useEffect(() => {
     if (trips.length > 0 && !currentTrip) fetchTrip(trips[0].id);
   }, [trips, currentTrip]);
+
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    // Listen to changes on the Disruption table for the current trip
+    const subscription = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'Disruption', filter: `tripId=eq.${currentTrip.id}` },
+        (payload) => {
+          console.log('Disruption change received!', payload);
+          // Refresh the trip to get the latest disruption status
+          fetchTrip(currentTrip.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [currentTrip?.id]);
 
   const handleDelete = async (tripId: string) => {
     await deleteTrip(tripId);
@@ -174,6 +201,17 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
+          {/* Disruption View (if applicable) */}
+          {currentTrip.status === 'disrupted' && currentTrip.flights?.[0] && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.12 }}>
+              <DisruptionView tripId={currentTrip.id} flightId={currentTrip.flights[0].id} />
+              
+              {/* Assuming disruption data is available. Normally you'd pass it down or fetch it inside the panel */}
+              {/* <ReasoningPanel disruption={disruption} /> */}
+              {/* <AuditLogPanel disruptionId={disruption.id} /> */}
+            </motion.div>
+          )}
+
           {/* Bookings Section */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.15 }}>
             <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 px-1">Your Bookings</h3>
@@ -302,6 +340,9 @@ export default function Dashboard() {
           </motion.div>
         </div>
       )}
+
+      {/* Admin Panel (Dev Only) */}
+      {import.meta.env.DEV && <AdminPanel trips={trips} />}
     </div>
   );
 }

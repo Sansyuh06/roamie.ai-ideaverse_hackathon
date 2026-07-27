@@ -4,8 +4,7 @@ import {
 } from '../../domain/interfaces';
 import {
   TripEntity, ItineraryDayEntity, FlightBookingEntity,
-  HotelBookingEntity, CabBookingEntity, UserEntity,
-  DisruptionLogEntity
+  HotelBookingEntity, CabBookingEntity, UserEntity
 } from '../../domain/entities';
 
 function parseEvents(raw: any): any[] {
@@ -139,7 +138,4 @@ export class PrismaTripRepository implements ITripRepository {
     return prisma.user.findUnique({ where: { id } });
   }
 
-  async createDisruptionLog(data: Omit<DisruptionLogEntity, 'id' | 'createdAt'>): Promise<DisruptionLogEntity> {
-    return prisma.disruptionLog.create({ data }) as any;
-  }
 }

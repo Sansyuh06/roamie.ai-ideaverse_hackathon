@@ -6,8 +6,10 @@ const prisma = new PrismaClient();
 async function seed() {
   console.log('🌱 Seeding Roamie database...\n');
 
-  // Clean existing data
-  await prisma.disruptionLog.deleteMany();
+  // Clean existing data (order matters for FK constraints)
+  await prisma.auditEntry.deleteMany();
+  await prisma.alternative.deleteMany();
+  await prisma.disruption.deleteMany();
   await prisma.expense.deleteMany();
   await prisma.cabBooking.deleteMany();
   await prisma.hotelBooking.deleteMany();
